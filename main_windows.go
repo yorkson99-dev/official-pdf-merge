@@ -87,6 +87,9 @@ const (
     DT_CENTER            = 0x0001
     DT_VCENTER           = 0x0004
     DT_SINGLELINE        = 0x0020
+    SS_LEFTNOWORDWRAP    = 0x000C
+    SS_NOPREFIX          = 0x0080
+    SS_ENDELLIPSIS       = 0x4000
 	WM_DESTROY           = 0x0002
 	WM_COMMAND           = 0x0111
 	WM_DROPFILES         = 0x0233
@@ -242,9 +245,9 @@ func paintButton(l uintptr) {
         title="  選擇公文 ZIP　›"
         fill=winColor(37,112,237);border=fill;fg=winColor(255,255,255)
     case ID_MERGE:
-        title="合併一般 PDF"
+        title="合併一般文件"
         fill=winColor(231,241,255);border=winColor(210,228,252);fg=winColor(24,101,224)
-    case ID_ADD: title="＋ 加入 PDF"
+    case ID_ADD: title="＋ 加入文件"
     case ID_UP: title="↑ 上移"
     case ID_DOWN: title="↓ 下移"
     case ID_REMOVE: title="移除"
@@ -291,13 +294,31 @@ func traceStartup(stage string) {
 
 func str(s string) *uint16 { p, _ := syscall.UTF16PtrFromString(s); return p }
 func fileFilter() []uint16 {
-	return []uint16{'P', 'D', 'F', ' ', '(', '*', '.', 'p', 'd', 'f', ')', 0, '*', '.', 'p', 'd', 'f', 0, 0}
+    return windowsFilter("PDF (*.pdf)", "*.pdf")
+}
+func documentFileFilter() []uint16 {
+    return windowsFilter("支援文件（PDF、Word、ODF、Excel、PowerPoint）",
+        "*.pdf;*.doc;*.docx;*.docm;*.odt;*.rtf;*.txt;*.xls;*.xlsx;*.xlsm;*.ods;*.csv;*.tsv;*.ppt;*.pptx;*.pptm;*.odp")
+}
+func windowsFilter(label, pattern string) []uint16 {
+    out := make([]uint16, 0, 320)
+    for _, text := range []string{label, pattern, "所有檔案 (*.*)", "*.*"} {
+        out = append(out, utf16.Encode([]rune(text))...)
+        out = append(out, 0)
+    }
+    return append(out, 0)
 }
 func send(h uintptr, m uint32, w, l uintptr) uintptr {
 	r, _, _ := pSendMessage.Call(h, uintptr(m), w, l)
 	return r
 }
-func status(s string) { pSetWindowText.Call(hwndStatus, uintptr(unsafe.Pointer(str(s)))) }
+func status(s string) {
+    // The old STATIC control wrapped long paths into adjacent controls.
+    // Keep the live status exactly one line even on smaller displays.
+    chars := []rune(s)
+    if len(chars) > 55 { s = string(chars[:54]) + "…" }
+    if hwndStatus != 0 { pSetWindowText.Call(hwndStatus, uintptr(unsafe.Pointer(str(s)))) }
+}
 func alert(msg string, err bool) {
 	flags := uintptr(MB_OK | MB_ICONINFORMATION)
 	if err {
@@ -326,16 +347,16 @@ func initUI() {
     makeChild("STATIC","PDF、Word、ODF、Excel、PowerPoint 附件自動轉檔並依序合併",43,161,594,30,0,0)
     hwndZip=makeChild("BUTTON","選擇公文 ZIP",43,201,604,49,WS_TABSTOP|BS_OWNERDRAW,ID_ADD_ZIP)
     hwndDetail=makeChild("BUTTON","使用完整日期與發文字號命名",45,264,582,30,WS_TABSTOP|0x00000003,ID_FULL_NAME)
-    makeChild("STATIC","一般 PDF　手動合併",42,333,575,28,0,0)
+    makeChild("STATIC","一般文件　手動排序合併",42,333,575,28,0,0)
     hwndList=makeChild("LISTBOX","",42,370,437,141,WS_BORDER|WS_VSCROLL|WS_TABSTOP|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT,ID_LIST)
     oldListProc,_,_=pSetWindowLongPtr.Call(hwndList,GWLP_WNDPROC,listProc)
-    makeChild("BUTTON","加入 PDF",491,370,154,32,WS_TABSTOP|BS_OWNERDRAW,ID_ADD)
+    makeChild("BUTTON","加入文件",491,370,154,32,WS_TABSTOP|BS_OWNERDRAW,ID_ADD)
     makeChild("BUTTON","上移",491,410,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_UP)
     makeChild("BUTTON","下移",572,410,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_DOWN)
     makeChild("BUTTON","移除",491,451,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_REMOVE)
     makeChild("BUTTON","清空",572,451,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_CLEAR)
-    hwndMerge=makeChild("BUTTON","合併一般 PDF",42,524,603,40,WS_TABSTOP|BS_OWNERDRAW,ID_MERGE)
-    hwndStatus=makeChild("STATIC","待命｜拖入 ZIP 即自動產出 PDF",38,592,597,26,0,ID_STATUS)
+    hwndMerge=makeChild("BUTTON","合併一般文件",42,524,603,40,WS_TABSTOP|BS_OWNERDRAW,ID_MERGE)
+    hwndStatus=makeChild("STATIC","待命｜拖入 ZIP 即自動產出 PDF",38,592,597,26,SS_LEFTNOWORDWRAP|SS_ENDELLIPSIS|SS_NOPREFIX,ID_STATUS)
     pDragAcceptFiles.Call(hwndMain,1)
     pDragAcceptFiles.Call(hwndList,1)
 }
@@ -350,9 +371,9 @@ func refresh(selectIndex int) {
 		send(hwndList, LB_SETCURSEL, uintptr(selectIndex), 0)
 	}
 	if len(winFiles) < 2 {
-		status(fmt.Sprintf("共 %d 份 PDF，至少需 2 份才能合併。", len(winFiles)))
+		status(fmt.Sprintf("共 %d 份文件；可加入 PDF 或 Office／ODF 文件。", len(winFiles)))
 	} else {
-		status(fmt.Sprintf("目前 %d 份 PDF；清單即合併順序。", len(winFiles)))
+		status(fmt.Sprintf("目前 %d 份文件；清單即合併順序。", len(winFiles)))
 	}
 }
 func selected() int {
@@ -385,7 +406,7 @@ func appendFiles(files []string) {
 	count := 0
 	for _, f := range files {
 		f = filepath.Clean(f)
-		if !strings.EqualFold(filepath.Ext(f), ".pdf") {
+		if !supportedOfficialExt(filepath.Ext(f)) {
 			continue
 		}
 		abs, e := filepath.Abs(f)
@@ -404,10 +425,10 @@ func appendFiles(files []string) {
 	}
 	refresh(-1)
 	if count == 0 {
-		status("沒有新增 PDF：請拖入 PDF 檔案（重複項目會略過）。")
+		status("沒有新增支援文件；重複或不支援的檔案已略過。")
 		return
 	}
-	status(fmt.Sprintf("已加入 %d 份 PDF。請在清單中調整合併順序。", count))
+	status(fmt.Sprintf("已加入 %d 份文件。請在清單中調整順序。", count))
 }
 func dropFiles(hdrop uintptr) {
 	count, _, _ := pDragQueryFile.Call(hdrop, ^uintptr(0), 0, 0)
@@ -426,27 +447,75 @@ func dropFiles(hdrop uintptr) {
 }
 // ZIP exports use a separate workflow rather than adding opinion sheets to the manual list.
 func handleInputFiles(files []string) {
-	traceStartup("handleInputFiles begin")
-	var zips []string
-	var pdfs []string
-	for _, p := range files {
-		switch strings.ToLower(filepath.Ext(p)) {
-		case ".zip":
-			zips = append(zips, p)
-		case ".pdf":
-			pdfs = append(pdfs, p)
-		}
-	}
-	if len(zips) > 0 {
-		traceStartup("handleInputFiles has ZIP")
-		if len(zips) != 1 || len(pdfs) > 0 {
-			alert("請一次拖入一份公文 ZIP；一般 PDF 請另外拖入。", true)
-			return
-		}
-		startOfficialZIP(zips[0])
-		return
-	}
-	if len(pdfs) > 0 { appendFiles(pdfs) }
+    traceStartup("handleInputFiles begin")
+    var zips, docs []string
+    for _, p := range files {
+        ext := strings.ToLower(filepath.Ext(p))
+        if ext == ".zip" { zips = append(zips, p) } else if supportedOfficialExt(ext) { docs = append(docs, p) }
+    }
+    if len(zips) > 0 {
+        if len(zips) != 1 || len(docs) > 0 {
+            alert("請一次只拖入一份公文 ZIP，或另外拖入一般文件。",true)
+            return
+        }
+        startOfficialZIP(zips[0])
+        return
+    }
+    if len(docs) > 0 { appendFiles(docs) }
+}
+
+func handleStartupFiles(args []string) {
+    // Dragging files onto an unopened EXE launches it with file arguments.
+    // That workflow is unattended and never invokes GetSaveFileNameW.
+    if len(args) == 0 { return }
+    if args[0] == "--manual" {
+        handleInputFiles(args[1:])
+        return
+    }
+    var zips, docs []string
+    for _, p := range args {
+        ext := strings.ToLower(filepath.Ext(p))
+        if ext == ".zip" { zips = append(zips, p); continue }
+        if !supportedOfficialExt(ext) {
+            status("不支援的文件：" + filepath.Base(p))
+            return
+        }
+        abs, err := filepath.Abs(p)
+        if err != nil { status("無法取得檔案路徑"); return }
+        if st, err := os.Stat(abs); err != nil || st.IsDir() {
+            status("檔案不存在或不是一般文件：" + filepath.Base(p))
+            return
+        }
+        docs = append(docs, abs)
+    }
+    if len(zips) == 1 && len(docs) == 0 { startOfficialZIP(zips[0]); return }
+    if len(zips) > 0 { status("ZIP 不可與一般文件混合拖入，請分開處理。"); return }
+    if len(docs) > 0 { startAutoMixed(docs) }
+}
+
+func startAutoMixed(files []string) {
+    if isMerging { return }
+    output, err := autoMergedPath(files)
+    if err != nil { status(err.Error()); return }
+    startMixedWorker(files, output)
+}
+
+func startMixedWorker(files []string, output string) {
+    if isMerging { return }
+    isMerging = true
+    status(fmt.Sprintf("正在轉換及合併 %d 份文件…", len(files)))
+    snapshot := append([]string(nil), files...)
+    go func() {
+        result := mergeResult{path: output}
+        defer func() {
+            if v := recover(); v != nil { result.err = fmt.Errorf("合併作業異常：%v", v) }
+            resultMu.Lock()
+            latestResult = result
+            resultMu.Unlock()
+            pPostMessage.Call(hwndMain, WM_APP+1, 0, 0)
+        }()
+        result.count, result.err = mergeMixedFiles(snapshot, output)
+    }()
 }
 func zipFilter() []uint16 {
 	return []uint16{'Z', 'I', 'P', ' ', '(', '*', '.', 'z', 'i', 'p', ')', 0, '*', '.', 'z', 'i', 'p', 0, 0}
@@ -518,10 +587,10 @@ func startOfficialZIP(path string) {
 
 func chooseFiles() {
 	data := make([]uint16, 32768)
-	filter := fileFilter()
+	filter := documentFileFilter()
 	f := openFileName{lStructSize: uint32(unsafe.Sizeof(openFileName{})), hwndOwner: hwndMain,
 		lpstrFilter: &filter[0], lpstrFile: &data[0], nMaxFile: uint32(len(data)),
-		lpstrTitle: str("加入 PDF 檔案"), flags: OFN_EXPLORER | OFN_ALLOWMULTISELECT | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR}
+		lpstrTitle: str("加入 PDF 或 Office／ODF 文件"), flags: OFN_EXPLORER | OFN_ALLOWMULTISELECT | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR}
 	r, _, _ := pGetOpenFileName.Call(uintptr(unsafe.Pointer(&f)))
 	if r == 0 {
 		return
@@ -553,7 +622,7 @@ func chooseFiles() {
 }
 func chooseOutput() string {
 	if len(winFiles) < 2 {
-		alert("至少加入 2 份 PDF。", true)
+		alert("請至少加入 2 份文件，才能手動合併。", true)
 		return ""
 	}
 	folder := filepath.Dir(winFiles[0])
@@ -586,23 +655,11 @@ func chooseOutput() string {
 	return path
 }
 func startMerge() {
-	if isMerging {
-		return
-	}
-	out := chooseOutput()
-	if out == "" {
-		return
-	}
-	snapshot := append([]string(nil), winFiles...)
-	isMerging = true
-	status("正在合併 PDF，請勿關閉此視窗…")
-	go func() {
-		count, e := mergePDFFiles(snapshot, out)
-		resultMu.Lock()
-		latestResult = mergeResult{path: out, count: count, err: e}
-		resultMu.Unlock()
-		pPostMessage.Call(hwndMain, WM_APP+1, 0, 0)
-	}()
+    if isMerging { return }
+    if len(winFiles) < 2 { status("請先加入至少 2 份文件。"); return }
+    out := chooseOutput()
+    if out == "" { return }
+    startMixedWorker(winFiles, out)
 }
 func removeSelected() {
 	i := selected()
@@ -725,7 +782,7 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		}
 		return 0
 	case WM_APP + 3:
-		if len(os.Args) > 1 { handleInputFiles(os.Args[1:]) }
+		if len(os.Args) > 1 { handleStartupFiles(os.Args[1:]) }
 		return 0
 	case WM_APP + 1:
 		traceStartup("WM_APP+1 received")
@@ -737,11 +794,11 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		traceStartup("WM_APP+1 flags restored")
 		if result.err != nil {
 			traceStartup("WM_APP+1 failure update begin")
-			status("合併失敗：" + result.err.Error())
+			status("合併失敗｜" + result.err.Error())
 			alert("合併失敗：\n"+result.err.Error(), true)
 		} else {
 			traceStartup("WM_APP+1 success update begin")
-			status(fmt.Sprintf("已完成 %d 頁%s：%s", result.count, result.warning, result.path))
+			status(fmt.Sprintf("完成 %d 頁%s｜%s", result.count, result.warning, filepath.Base(result.path)))
 		}
 		traceStartup("WM_APP+1 done")
 		return 0
