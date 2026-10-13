@@ -5,12 +5,12 @@
 ## 系統需求與執行方式
 
 - **原生 Win32 視窗**（傳統 Windows 按鈕、清單與開啟／儲存對話框）。
-- 產生單一約 2.4 MB 的 `公文PDF快合.exe`，**執行時不需要安裝 Go、Python、Java、.NET、套件或瀏覽器執行環境**。
+- 產生單一約 2～3 MB 的 `公文PDF快合.exe`，**執行時不需要安裝 Go、Python、Java、.NET、套件或瀏覽器執行環境**。
 - PDF 和 ZIP 全程本機離線處理，不上傳公文內容。
 - EXE 未經程式碼簽章。機關電腦可能因應用程式控管政策禁止執行；須由資訊管理單位依法規與機關程序審核，請勿繞過管制。
 - 開發／重新建置在 GitHub Actions 上進行；**公務電腦只下載已建置的 EXE**。
 
-## 快速使用（v1.5.0）
+## 快速使用（v1.6.0）
 
 ### 公文 ZIP（一鍵自動化）
 
@@ -18,10 +18,10 @@
 
 - **直接合併**：PDF。
 - **可編輯附件轉 PDF**：Word `DOC/DOCX/DOCM/ODT/RTF/TXT`、Excel `XLS/XLSX/XLSM/ODS/CSV/TSV`、PowerPoint `PPT/PPTX/PPTM/ODP`。
-- **轉檔引擎**：預設一律優先由已安裝的 Microsoft Office 執行轉檔，包括 ODT、ODS、ODP。因部分 NDC ODF 版本在背景啟動時會顯示 `bootstrap.ini` 已鎖定等警告，程式不再自動啟動 NDC ODF。僅供排障者明確設定 `FASTPDF_ENABLE_NDC_FALLBACK=1` 時，在 Office 轉檔失敗後嘗試 NDC ODF。
+- **轉檔引擎**：預設一律優先由已安裝的 Microsoft Office 執行轉檔，包括 ODT、ODS、ODP。Office 透過 Windows 原生 COM／IDispatch 介面直接轉換，**不再啟動 PowerShell、NDC ODF 命令列或其他外部轉檔指令**。已完全移除 NDC ODF 後備啟動流程。
 - **無法轉換即中止**：不會略過未知附件、副檔名或轉檔失敗的附件而假裝整份公文已完成。
 - **命名**：預設「機關公文.pdf」或「機關公文及其附件.pdf」；可勾選完整日期與文號命名，若有附件同樣在「號函」後面補上「及其附件」。無法辨識機關時使用「ZIP檔名_來文資料待確認.pdf」。
-- **轉檔效能**：純 PDF 公文不會啟動 Office；混合附件會等候本機 Word／Excel／PowerPoint 或 ODF 工具轉檔。首次啟動 Office 通常比純 PDF 慢。
+- **轉檔效能**：純 PDF 公文不會啟動 Office；混合附件會等候本機 Word／Excel／PowerPoint 轉檔。首次啟動 Office 通常比純 PDF 慢。
 - **安全性**：轉檔設為唯讀，Office 巨集自動執行已停用；文件內容不會上傳網路。請注意 Office／ODF 格式轉換仍可能有排版差異，正式公文應核對轉出結果。
 
 ### 一般文件合併（PDF、Office、ODF）
@@ -38,11 +38,11 @@
 
 ### 圖示與視覺介面
 
-原生 Win32 極簡風格，淺色卡片與重點藍色操作區；應用程式圖示已嵌入單一 EXE。啟動時不需要瀏覽器核心、網路連線或新增使用者端套件。Office 轉檔時的 PowerShell 子程序以不顯示主控台方式啟動，但沒有修改執行政策、防毒程式或其事件紀錄。
+原生 Win32 極簡風格，淺色卡片與重點藍色操作區；應用程式圖示已嵌入單一 EXE。啟動時不需要瀏覽器核心、網路連線或新增使用者端套件。Office 轉檔由 EXE 直接使用 Windows COM API，沒有額外 PowerShell 主控台或轉檔子命令列。未變更防毒程式、監控或執行政策。
 
 ### 驗證範圍
 
-GitHub CI 驗證 PDF 合併核心、模擬 ODT/DOCX/PPTX 附件篩選排序與合併、ZIP 一鍵模式及 Windows 按鈕回應。**GitHub Windows Runner 未必安裝 Office 或 NDC ODF**，因此實際 DOCX/ODT 的 Office 轉 PDF 行為仍須在已安裝軟體的公務電腦上驗證。
+GitHub CI 驗證 PDF 合併核心、模擬 ODT/DOCX/PPTX 附件篩選排序與合併、ZIP 一鍵模式及 Windows 按鈕回應。GitHub Windows Runner 使用 Windows COM 元件驗證 VARIANT／BSTR／IDispatch 介面呼叫，但**未安裝 Office**，因此 Word／Excel／PowerPoint 的實際轉 PDF 仍須於已安裝 Office 的公務電腦上核對。
 
 ## 編譯
 
@@ -60,7 +60,7 @@ go build -trimpath -ldflags="-H=windowsgui -s -w" -o "公文PDF快合.exe" .
 
 ## 機關端資安審查
 
-本工具為自行編譯且未具組織憑證數位簽章的 EXE；在 Trend Micro Apex One 或其他端點安全產品下，執行外部 PowerShell 與 Office COM 自動化可能觸發行為監控。**介面隱藏子程序視窗並非資安核准方式，也無法保證不被封鎖。**
+本工具為自行編譯且未具組織憑證數位簽章的 EXE；在 Trend Micro Apex One 或其他端點安全產品下，Office COM 自動化以及未經程式碼簽章的自製 EXE 仍可能觸發行為監控。**不再使用 PowerShell 並不代表取得資安核准，也不能保證程式不被封鎖。**
 
 - 若監控跳出「發現安全威脅／違規」，請保留警示畫面、檢出類型、動作、偵測程序路徑和時間。
 - 以 GitHub Actions 建置紀錄和 EXE 的 SHA-256 雜湊提供資訊人員核對；由機關依核准程序決定是否允許執行、簽章或採其他既有核准方式。
