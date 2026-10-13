@@ -29,7 +29,38 @@ type officialJob struct {
 	TextRead                       bool
 }
 
-var attachmentName = regexp.MustCompile(`(?i)^(.*?)_(?:ATTCH|ATTACH)([0-9]+)\.pdf$`)
+var attachmentName = regexp.MustCompile(`(?i)^(.*?)_(?:ATTCH|ATTACH)([0-9]+)\.[^.]+package main
+
+// Official-letter ZIP filtering, file ordering and naming. Pure standard library.
+// ZIP entries are only read; no file is extracted outside a temporary private folder.
+
+import (
+	"archive/zip"
+	"bytes"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+)
+
+type officialEntry struct {
+	index       int
+	name, group string
+	number      int
+	attachment  bool
+}
+type officialJob struct {
+	ZipPath                        string
+	Entries                        []officialEntry
+	Agency, Date, DocumentNo, Kind string
+	TextRead                       bool
+}
+
+)
 var agencyLine = regexp.MustCompile(`(?m)^([^\r\n：:]{2,70}?)[ \t　]*(開會通知單|書函|通知|函)[ \t　]*$`)
 var dateLine = regexp.MustCompile(`發文日期[：:\s]*(?:中華民國)?\s*([0-9]{2,3})\s*年\s*([0-9]{1,2})\s*月\s*([0-9]{1,2})\s*日`)
 var numberLine = regexp.MustCompile(`發文字號[：:\s]*([^\r\n]*?號)`)
@@ -53,8 +84,20 @@ func basenameZip(name string) string {
 }
 func excludedLetterFile(name string) bool {
 	l := strings.ToLower(name)
-	return !strings.HasSuffix(l, ".pdf") || strings.Contains(l, "opinion") || strings.Contains(l, "(after)") || strings.Contains(l, "(before)") || strings.Contains(name, "合併版") || strings.Contains(name, "\xa6\x58\xa8\xd6\xaa\xa9")
+	return strings.Contains(l, "opinion") || strings.Contains(l, "(after)") || strings.Contains(l, "(before)") || strings.Contains(name, "合併版") || strings.Contains(name, "\xa6\x58\xa8\xd6\xaa\xa9")
 }
+// Supported correspondence attachments. Unknown ATTCH extensions are rejected,
+// never silently dropped from a supposedly complete merged document.
+func supportedOfficialExt(ext string) bool {
+	switch strings.ToLower(ext) {
+	case ".pdf", ".doc", ".docx", ".docm", ".odt", ".rtf", ".txt",
+		".xls", ".xlsx", ".xlsm", ".ods", ".csv", ".tsv",
+		".ppt", ".pptx", ".pptm", ".odp":
+		return true
+	}
+	return false
+}
+
 func analyzeZIP(path string) (*officialJob, error) {
 	r, err := zip.OpenReader(path)
 	if err != nil {
@@ -75,17 +118,21 @@ func analyzeZIP(path string) (*officialJob, error) {
 			continue
 		}
 		if f.UncompressedSize64 > 700*1024*1024 {
-			return nil, errors.New("PDF 檔案過大，已中止處理")
+			return nil, errors.New("檔案過大，已中止處理")
 		}
+		ext := strings.ToLower(filepath.Ext(base))
 		n := strings.TrimSuffix(base, filepath.Ext(base))
 		if matches := attachmentName.FindStringSubmatch(base); matches != nil {
+			if !supportedOfficialExt(ext) {
+				return nil, fmt.Errorf("附件 %s 不支援轉換為 PDF，已停止合併以避免遺漏", base)
+			}
 			var no int
 			if _, err := fmt.Sscanf(matches[2], "%d", &no); err != nil || no <= 0 {
 				continue
 			}
 			key := strings.ToLower(matches[1])
 			atts[key] = append(atts[key], officialEntry{i, base, key, no, true})
-		} else {
+		} else if ext == ".pdf" {
 			key := strings.ToLower(n)
 			mains[key] = append(mains[key], officialEntry{i, base, key, 0, false})
 		}
@@ -189,7 +236,8 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		name := filepath.Join(dir, fmt.Sprintf("%04d.pdf", i))
+		ext := strings.ToLower(filepath.Ext(e.name))
+		name := filepath.Join(dir, fmt.Sprintf("%04d%s", i, ext))
 		f, err := os.Create(name)
 		if err != nil {
 			in.Close()
@@ -206,6 +254,16 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
 		}
 		if uint64(n) != item.UncompressedSize64 {
 			return 0, errors.New("附件大小不符")
+		}
+		if ext != ".pdf" {
+			converted := filepath.Join(dir, fmt.Sprintf("%04d-converted.pdf", i))
+			if err := convertDocumentToPDF(name, converted); err != nil {
+				return 0, fmt.Errorf("附件 %s 轉成 PDF 失敗：%w", e.name, err)
+			}
+			if st, err := os.Stat(converted); err != nil || st.Size() < 16 {
+				return 0, fmt.Errorf("附件 %s 轉換後未產生有效 PDF", e.name)
+			}
+			name = converted
 		}
 		files = append(files, name)
 	}
