@@ -1,0 +1,66 @@
+name: Build standalone Win32 EXE
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Expand initial source archive (one time)
+        shell: pwsh
+        run: |
+          if (Test-Path 'bootstrap/source.00.txt') {
+            $parts = @(0..3 | ForEach-Object { (Get-Content -Raw ("bootstrap/source.0$_.txt")).Trim() })
+            $archive = [Convert]::FromBase64String(($parts -join ''))
+            [System.IO.File]::WriteAllBytes('source.tar.xz', $archive)
+            $actual = (Get-FileHash -Algorithm SHA256 'source.tar.xz').Hash.ToLowerInvariant()
+            $expected = '89c95abd939323be533968a9efcd146f65233b342536e70a4f059a5e0088cd6e'
+            if ($actual -ne $expected) { throw "Source archive integrity mismatch: $actual" }
+            tar -xJf source.tar.xz
+            if ($LASTEXITCODE -ne 0) { throw 'Source extraction failed' }
+            Remove-Item source.tar.xz
+          }
+      - name: Install Go on GitHub hosted runner only
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: false
+      - name: Unit tests
+        run: go test ./...
+      - name: Build single Windows x64 GUI executable
+        shell: pwsh
+        run: |
+          $env:GOOS='windows'
+          $env:GOARCH='amd64'
+          $env:CGO_ENABLED='0'
+          go build -trimpath -ldflags='-H=windowsgui -s -w' -o '公文PDF快合.exe' .
+          if ($LASTEXITCODE -ne 0) { throw 'Go build failed' }
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: OfficialPDFMerge-win64
+          path: 公文PDF快合.exe
+          if-no-files-found: error
+      - name: Check in extracted source files and remove bootstrap archive
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          if (Test-Path 'bootstrap/source.00.txt') {
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -- .gitignore go.mod main_windows.go cli.go lettertext.go pdfmerge.go zipmerge.go pdfmerge_test.go zipmerge_test.go testdata/sample0.pdf
+            git rm -r -- bootstrap
+            git commit -m 'feat: publish native Win32 PDF merger source and tests'
+            if ($LASTEXITCODE -ne 0) { throw 'Git commit failed' }
+            git push origin HEAD:main
+            if ($LASTEXITCODE -ne 0) { throw 'Git push failed' }
+          }
