@@ -54,7 +54,11 @@ try {
     foreach ($command in @(112,111,112,111)) {
       $ok = [Win32PDFSmoke]::SendMessageTimeout($hwnd, 0x0111,
         [UIntPtr]::new([uint32]$command), [IntPtr]::Zero, 2, 2000, [ref]$res)
-      if ($ok -eq [IntPtr]::Zero) { throw "GUI stopped responding to tab command $command after ZIP output" }
+      if ($ok -eq [IntPtr]::Zero) {
+        Write-Output "MODE SWITCH FAILURE, process responding=$($p.Responding):"
+        if (Test-Path $env:FASTPDF_STARTUP_LOG) { Get-Content -Raw $env:FASTPDF_STARTUP_LOG | Write-Output }
+        throw "GUI stopped responding to tab command $command after ZIP output"
+      }
     }
     $passed = $true
     Write-Output "PASS: ZIP auto-merged beside source; success status delivered; GUI responded to four tab switches. PDF bytes=$size"
