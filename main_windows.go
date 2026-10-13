@@ -32,6 +32,11 @@ var (
 	pPostMessage              = u32.NewProc("PostMessageW")
 	pMessageBox               = u32.NewProc("MessageBoxW")
 	pSetWindowText            = u32.NewProc("SetWindowTextW")
+    pLoadIcon                 = u32.NewProc("LoadIconW")
+    pBeginPaint               = u32.NewProc("BeginPaint")
+    pEndPaint                 = u32.NewProc("EndPaint")
+    pFillRect                 = u32.NewProc("FillRect")
+    pDrawText                 = u32.NewProc("DrawTextW")
 	pEnableWindow             = u32.NewProc("EnableWindow")
 	pDestroyWindow            = u32.NewProc("DestroyWindow")
 	pPostQuitMessage          = u32.NewProc("PostQuitMessage")
@@ -45,6 +50,14 @@ var (
 	pGetOpenFileName          = comdlg.NewProc("GetOpenFileNameW")
 	pGetSaveFileName          = comdlg.NewProc("GetSaveFileNameW")
 	pCreateFont               = g32.NewProc("CreateFontW")
+    pCreateSolidBrush         = g32.NewProc("CreateSolidBrush")
+    pCreatePen                = g32.NewProc("CreatePen")
+    pSelectObject             = g32.NewProc("SelectObject")
+    pDeleteObject             = g32.NewProc("DeleteObject")
+    pRoundRect                = g32.NewProc("RoundRect")
+    pSetBkMode                = g32.NewProc("SetBkMode")
+    pSetTextColor             = g32.NewProc("SetTextColor")
+    pGetStockObject           = g32.NewProc("GetStockObject")
 	pSetProcessDPIAware       = u32.NewProc("SetProcessDPIAware")
 	pGetKeyState              = u32.NewProc("GetKeyState")
 	pSetFocus                 = u32.NewProc("SetFocus")
@@ -64,6 +77,16 @@ const (
 	LBS_NOTIFY           = 0x0001
 	LBS_NOINTEGRALHEIGHT = 0x0100
 	WM_CREATE            = 0x0001
+    WM_PAINT             = 0x000F
+    WM_ERASEBKGND        = 0x0014
+    WM_DRAWITEM          = 0x002B
+    WM_CTLCOLORSTATIC    = 0x0138
+    BS_OWNERDRAW         = 0x0000000B
+    ODS_SELECTED         = 0x0001
+    ODS_DISABLED         = 0x0004
+    DT_CENTER            = 0x0001
+    DT_VCENTER           = 0x0004
+    DT_SINGLELINE        = 0x0020
 	WM_DESTROY           = 0x0002
 	WM_COMMAND           = 0x0111
 	WM_DROPFILES         = 0x0233
@@ -157,6 +180,85 @@ type openFileName struct {
 	dwReserved        uint32
 	flagsEx           uint32
 }
+type winRect struct { Left, Top, Right, Bottom int32 }
+type paintStruct struct {
+    Hdc uintptr
+    Erase int32
+    PaintRect winRect
+    Restore int32
+    IncUpdate int32
+    Reserved [32]byte
+}
+type drawItem struct {
+    CtlType uint32
+    CtlID uint32
+    ItemID uint32
+    Action uint32
+    State uint32
+    HwndItem uintptr
+    Hdc uintptr
+    RcItem winRect
+    ItemData uintptr
+}
+func winColor(r,g,b byte) uintptr {
+    return uintptr(uint32(r)|uint32(g)<<8|uint32(b)<<16)
+}
+func fillColor(hdc uintptr, rc winRect, rgb uintptr) {
+    brush,_,_ := pCreateSolidBrush.Call(rgb)
+    pFillRect.Call(hdc, uintptr(unsafe.Pointer(&rc)), brush)
+    pDeleteObject.Call(brush)
+}
+func roundedColor(hdc uintptr, rc winRect, radius int32, fill, border uintptr) {
+    brush,_,_ := pCreateSolidBrush.Call(fill)
+    pen,_,_ := pCreatePen.Call(0,1,border)
+    oldBrush,_,_ := pSelectObject.Call(hdc,brush)
+    oldPen,_,_ := pSelectObject.Call(hdc,pen)
+    pRoundRect.Call(hdc,uintptr(rc.Left),uintptr(rc.Top),uintptr(rc.Right),uintptr(rc.Bottom),uintptr(radius),uintptr(radius))
+    pSelectObject.Call(hdc,oldPen)
+    pSelectObject.Call(hdc,oldBrush)
+    pDeleteObject.Call(pen)
+    pDeleteObject.Call(brush)
+}
+func paintBackground(hwnd uintptr) {
+    var ps paintStruct
+    hdc,_,_:=pBeginPaint.Call(hwnd,uintptr(unsafe.Pointer(&ps)))
+    if hdc==0 {return}
+    bg:=winColor(247,249,253)
+    fillColor(hdc,winRect{0,0,690,660},bg)
+    roundedColor(hdc,winRect{22,106,668,305},24,winColor(233,243,255),winColor(217,232,253))
+    roundedColor(hdc,winRect{22,321,668,577},24,winColor(255,255,255),winColor(229,235,243))
+    roundedColor(hdc,winRect{22,586,668,619},13,winColor(236,242,249),winColor(236,242,249))
+    pEndPaint.Call(hwnd,uintptr(unsafe.Pointer(&ps)))
+}
+func paintButton(l uintptr) {
+    d:=(*drawItem)(unsafe.Pointer(l))
+    if d==nil {return}
+    var title string
+    fg:=winColor(32,49,78)
+    fill:=winColor(246,249,254)
+    border:=winColor(222,232,245)
+    switch d.CtlID {
+    case ID_ADD_ZIP:
+        title="  選擇公文 ZIP　›"
+        fill=winColor(37,112,237);border=fill;fg=winColor(255,255,255)
+    case ID_MERGE:
+        title="合併一般 PDF"
+        fill=winColor(231,241,255);border=winColor(210,228,252);fg=winColor(24,101,224)
+    case ID_ADD: title="＋ 加入 PDF"
+    case ID_UP: title="↑ 上移"
+    case ID_DOWN: title="↓ 下移"
+    case ID_REMOVE: title="移除"
+    case ID_CLEAR: title="清空"
+    default: return
+    }
+    if d.State&ODS_SELECTED!=0 {fill=winColor(195,219,250);if d.CtlID==ID_ADD_ZIP {fill=winColor(24,89,198)}}
+    if d.State&ODS_DISABLED!=0 {fill=winColor(235,238,243);fg=winColor(152,158,168)}
+    roundedColor(d.Hdc,d.RcItem,16,fill,border)
+    pSetBkMode.Call(d.Hdc,1)
+    pSetTextColor.Call(d.Hdc,fg)
+    pDrawText.Call(d.Hdc,uintptr(unsafe.Pointer(str(title))),^uintptr(0),uintptr(unsafe.Pointer(&d.RcItem)),DT_CENTER|DT_VCENTER|DT_SINGLELINE)
+}
+
 type mergeResult struct {
 	path  string
 	count int
@@ -172,6 +274,7 @@ var (
 	resultMu                                                       sync.Mutex
 	latestResult                                                   mergeResult
 	fontHandle                                                     uintptr
+    titleFont uintptr
 	windowProc                                                     = syscall.NewCallback(wndProc)
 	listProc                                                       = syscall.NewCallback(listWndProc)
 )
@@ -212,24 +315,29 @@ func makeChild(class, text string, x, y, w, h int, style uint32, id int) uintptr
 
 
 func initUI() {
-	fontHeight := int32(-18)
-	fontHandle, _, _ = pCreateFont.Call(uintptr(fontHeight), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(str("Microsoft JhengHei UI"))))
-	makeChild("STATIC", "公文 ZIP｜拖入即合併", 22, 17, 550, 31, 0, 0)
-	makeChild("STATIC", "自動整理來文及 ATTCH 附件，結果存回 ZIP 相同資料夾。", 22, 52, 608, 25, 0, 0)
-	hwndZip = makeChild("BUTTON", "選擇公文 ZIP…", 22, 91, 600, 51, WS_TABSTOP, ID_ADD_ZIP)
-	hwndDetail = makeChild("BUTTON", "以完整日期、文號命名", 22, 153, 600, 31, WS_TABSTOP|0x00000003, ID_FULL_NAME)
-	makeChild("STATIC", "一般 PDF｜手動排序（不讀取桌面圖示）", 22, 211, 595, 27, 0, 0)
-	hwndList = makeChild("LISTBOX", "", 22, 241, 446, 184, WS_BORDER|WS_VSCROLL|WS_TABSTOP|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT, ID_LIST)
-	oldListProc, _, _ = pSetWindowLongPtr.Call(hwndList, GWLP_WNDPROC, listProc)
-	makeChild("BUTTON", "加入 PDF…", 480, 241, 142, 34, WS_TABSTOP, ID_ADD)
-	makeChild("BUTTON", "↑ 上移", 480, 281, 142, 31, WS_TABSTOP, ID_UP)
-	makeChild("BUTTON", "↓ 下移", 480, 318, 142, 31, WS_TABSTOP, ID_DOWN)
-	makeChild("BUTTON", "移除", 480, 355, 142, 31, WS_TABSTOP, ID_REMOVE)
-	makeChild("BUTTON", "清空", 480, 392, 142, 31, WS_TABSTOP, ID_CLEAR)
-	hwndMerge = makeChild("BUTTON", "合併一般 PDF…", 22, 441, 600, 41, WS_TABSTOP, ID_MERGE)
-	hwndStatus = makeChild("STATIC", "待命：將公文 ZIP 拖入視窗，即自動輸出。", 22, 499, 610, 45, 0, ID_STATUS)
-	pDragAcceptFiles.Call(hwndMain, 1)
-	pDragAcceptFiles.Call(hwndList, 1)
+    fontHeight := int32(-18)
+    fontHandle, _, _ = pCreateFont.Call(uintptr(fontHeight),0,0,0,400,0,0,0,1,0,0,0,0,uintptr(unsafe.Pointer(str("Microsoft JhengHei UI"))))
+    titleHeight := int32(-29)
+    titleFont,_,_=pCreateFont.Call(uintptr(titleHeight),0,0,0,700,0,0,0,1,0,0,0,0,uintptr(unsafe.Pointer(str("Microsoft JhengHei UI"))))
+    header:=makeChild("STATIC","公文快合",32,17,400,39,0,0)
+    if titleFont != 0 {send(header, WM_SETFONT,titleFont,1)}
+    makeChild("STATIC","本機處理 · 無須上傳 · ZIP 即放即合併",33,66,590,27,0,0)
+    makeChild("STATIC","公文 ZIP　自動合併",43,124,575,34,0,0)
+    makeChild("STATIC","PDF、Word、ODF、Excel、PowerPoint 附件自動轉檔並依序合併",43,161,594,30,0,0)
+    hwndZip=makeChild("BUTTON","選擇公文 ZIP",43,201,604,49,WS_TABSTOP|BS_OWNERDRAW,ID_ADD_ZIP)
+    hwndDetail=makeChild("BUTTON","使用完整日期與發文字號命名",45,264,582,30,WS_TABSTOP|0x00000003,ID_FULL_NAME)
+    makeChild("STATIC","一般 PDF　手動合併",42,333,575,28,0,0)
+    hwndList=makeChild("LISTBOX","",42,370,437,141,WS_BORDER|WS_VSCROLL|WS_TABSTOP|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT,ID_LIST)
+    oldListProc,_,_=pSetWindowLongPtr.Call(hwndList,GWLP_WNDPROC,listProc)
+    makeChild("BUTTON","加入 PDF",491,370,154,32,WS_TABSTOP|BS_OWNERDRAW,ID_ADD)
+    makeChild("BUTTON","上移",491,410,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_UP)
+    makeChild("BUTTON","下移",572,410,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_DOWN)
+    makeChild("BUTTON","移除",491,451,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_REMOVE)
+    makeChild("BUTTON","清空",572,451,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_CLEAR)
+    hwndMerge=makeChild("BUTTON","合併一般 PDF",42,524,603,40,WS_TABSTOP|BS_OWNERDRAW,ID_MERGE)
+    hwndStatus=makeChild("STATIC","待命｜拖入 ZIP 即自動產出 PDF",38,592,597,26,0,ID_STATUS)
+    pDragAcceptFiles.Call(hwndMain,1)
+    pDragAcceptFiles.Call(hwndList,1)
 }
 
 func refresh(selectIndex int) {
@@ -584,7 +692,20 @@ func listWndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 }
 func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 	switch m {
-	case WM_CREATE:
+	case WM_ERASEBKGND:
+        return 1
+    case WM_PAINT:
+        paintBackground(h)
+        return 0
+    case WM_DRAWITEM:
+        paintButton(l)
+        return 1
+    case WM_CTLCOLORSTATIC:
+        pSetBkMode.Call(w,1)
+        pSetTextColor.Call(w,winColor(46,65,92))
+        b,_,_:=pGetStockObject.Call(5)
+        return b
+    case WM_CREATE:
 		traceStartup("WM_CREATE received")
 		hwndMain = h
 		initUI()
@@ -640,7 +761,8 @@ func main() {
 	pSetProcessDPIAware.Call()
 	instance, _, _ := pGetModuleHandle.Call(0)
 	className := str("FastPDFMergeNativeGUI")
-	wc := wndClass{cbSize: uint32(unsafe.Sizeof(wndClass{})), lpfnWndProc: windowProc, hInstance: instance, hbrBackground: 6, lpszClassName: className}
+	icon,_,_:=pLoadIcon.Call(instance,1)
+    wc := wndClass{cbSize: uint32(unsafe.Sizeof(wndClass{})), lpfnWndProc: windowProc, hInstance: instance, hbrBackground: 6, lpszClassName: className,hIcon: icon,hIconSm: icon}
 	atom, _, e := pRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))
 	traceStartup(fmt.Sprintf("RegisterClassExW atom=%d error=%v", atom, e))
 	if atom == 0 {
@@ -649,8 +771,8 @@ func main() {
 	}
 	screenX, _, _ := pGetSystemMetrics.Call(0)
 	screenY, _, _ := pGetSystemMetrics.Call(1)
-	x := int((screenX - 660) / 2)
-	y := int((screenY - 600) / 2)
+	x := int((screenX - 690) / 2)
+	y := int((screenY - 660) / 2)
 	if x < 0 {
 		x = 0
 	}
@@ -658,7 +780,7 @@ func main() {
 		y = 0
 	}
 	traceStartup("CreateWindowExW begin")
-	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜極簡版"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 660, 600, 0, 0, instance, 0)
+	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜極簡版"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 660, 0, 0, instance, 0)
 	traceStartup(fmt.Sprintf("CreateWindowExW hwnd=%d error=%v", hwnd, windowErr))
 	if hwnd == 0 {
 		pMessageBox.Call(0, uintptr(unsafe.Pointer(str("無法建立程式視窗："+windowErr.Error()))), uintptr(unsafe.Pointer(str("公文 PDF 快合｜啟動失敗"))), MB_OK|MB_ICONERROR)
