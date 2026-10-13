@@ -37,7 +37,7 @@ try {
     }
     # On hosted runners, FindWindow can be restricted by the window station.
     # System.Diagnostics.Process still resolves this process' own main HWND.
-    if ($proc.MainWindowHandle -ne [IntPtr]::Zero -and $proc.MainWindowTitle -like '*快合 PDF*') {
+    if ($proc.MainWindowHandle -ne [IntPtr]::Zero -and $proc.MainWindowTitle -like '*公文 PDF 快合*') {
       $seen = $true
       Write-Output "PASS: visible Win32 main window opened. Process ID=$($proc.Id), Handle=$($proc.MainWindowHandle), Title=$($proc.MainWindowTitle)"
       break
