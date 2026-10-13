@@ -211,7 +211,8 @@ func makeChild(class, text string, x, y, w, h int, style uint32, id int) uintptr
 
 
 func initUI() {
-	fontHandle, _, _ = pCreateFont.Call(uintptr(int32(-18)), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(str("Microsoft JhengHei UI"))))
+	fontHeight := int32(-18)
+	fontHandle, _, _ = pCreateFont.Call(uintptr(fontHeight), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(str("Microsoft JhengHei UI"))))
 	makeChild("STATIC", "公文 ZIP｜拖入即合併", 22, 17, 550, 31, 0, 0)
 	makeChild("STATIC", "自動整理來文及 ATTCH 附件，結果存回 ZIP 相同資料夾。", 22, 52, 608, 25, 0, 0)
 	hwndZip = makeChild("BUTTON", "選擇公文 ZIP…", 22, 91, 600, 51, WS_TABSTOP, ID_ADD_ZIP)
