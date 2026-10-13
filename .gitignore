@@ -1,0 +1,6 @@
+*.exe
+*.zip
+*.tmp
+*.log
+!testdata/*.pdf
+.DS_Store
