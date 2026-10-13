@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 )
@@ -204,6 +205,16 @@ var (
 	enumProc                                                       = syscall.NewCallback(enumWindowForDesktop)
 	desktopList                                                    uintptr
 )
+
+// Startup diagnostics are disabled by default; no document names or content are logged.
+func traceStartup(stage string) {
+	path := os.Getenv("FASTPDF_STARTUP_LOG")
+	if path == "" { return }
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil { return }
+	defer f.Close()
+	fmt.Fprintf(f, "%s pid=%d %s\n", time.Now().UTC().Format(time.RFC3339Nano), os.Getpid(), stage)
+}
 
 func str(s string) *uint16 { p, _ := syscall.UTF16PtrFromString(s); return p }
 func fileFilter() []uint16 {
@@ -776,8 +787,10 @@ func listWndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 	switch m {
 	case WM_CREATE:
+		traceStartup("WM_CREATE received")
 		hwndMain = h
 		initUI()
+		traceStartup("WM_CREATE UI initialized")
 		return 0
 	case WM_COMMAND:
 		id := int(w & 0xFFFF)
@@ -815,11 +828,13 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 	return r
 }
 func main() {
+	traceStartup("main entry")
 	pSetProcessDPIAware.Call()
 	instance, _, _ := pGetModuleHandle.Call(0)
 	className := str("FastPDFMergeNativeGUI")
 	wc := wndClass{cbSize: uint32(unsafe.Sizeof(wndClass{})), lpfnWndProc: windowProc, hInstance: instance, hbrBackground: 6, lpszClassName: className}
 	atom, _, e := pRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))
+	traceStartup(fmt.Sprintf("RegisterClassExW atom=%d error=%v", atom, e))
 	if atom == 0 {
 		pMessageBox.Call(0, uintptr(unsafe.Pointer(str("無法註冊 Windows 視窗類別："+e.Error()))), uintptr(unsafe.Pointer(str("公文 PDF 快合｜啟動失敗"))), MB_OK|MB_ICONERROR)
 		return
@@ -834,7 +849,9 @@ func main() {
 	if y < 0 {
 		y = 0
 	}
+	traceStartup("CreateWindowExW begin")
 	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("快合 PDF｜極簡快速合併"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 770, 630, 0, 0, instance, 0)
+	traceStartup(fmt.Sprintf("CreateWindowExW hwnd=%d error=%v", hwnd, windowErr))
 	if hwnd == 0 {
 		pMessageBox.Call(0, uintptr(unsafe.Pointer(str("無法建立程式視窗："+windowErr.Error()))), uintptr(unsafe.Pointer(str("公文 PDF 快合｜啟動失敗"))), MB_OK|MB_ICONERROR)
 		return
@@ -842,6 +859,7 @@ func main() {
 	if len(os.Args) > 1 {
 		handleInputFiles(os.Args[1:])
 	}
+	traceStartup("enter message loop")
 	var m msg
 	for {
 		r, _, _ := pGetMessage.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
