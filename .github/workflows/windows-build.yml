@@ -69,24 +69,27 @@ jobs:
       - name: Direct-to-EXE drop auto-merge and no-Save-As integration test
         shell: pwsh
         run: ./ci-auto-drop-e2e.ps1
+      - name: Manual sorted merge auto-save and optional Save As integration test
+        shell: pwsh
+        run: ./ci-manual-autosave-e2e.ps1
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
           name: OfficialPDFMerge-win64
           path: 公文PDF快合.exe
           if-no-files-found: error
-      - name: Publish portable EXE release v1.4.0
+      - name: Publish portable EXE release v1.5.0
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           Copy-Item -LiteralPath "公文PDF快合.exe" -Destination "OfficialPDFMerge.exe" -Force
-          gh release view v1.4.0 --json tagName *> $null
+          gh release view v1.5.0 --json tagName *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload v1.4.0 "OfficialPDFMerge.exe" --clobber
+            gh release upload v1.5.0 "OfficialPDFMerge.exe" --clobber
           } else {
-            gh release create v1.4.0 "OfficialPDFMerge.exe" --target main --title "公文 PDF 快合 v1.4.0" --notes "Win32 免安裝版；修正狀態列重疊、Office 優先處理 ODF，支援一般 PDF+Office+ODF 多格式合併；把文件直接拖到尚未開啟的 EXE 時在首份文件同目錄自動存檔，不開另存視窗；保留公文 ZIP 一鍵合併。" --latest
+            gh release create v1.5.0 "OfficialPDFMerge.exe" --target main --title "公文 PDF 快合 v1.5.0" --notes "Win32 原生免安裝版：完整日期文號於有附件時附加「及其附件」；Office 轉檔背景 PowerShell 視窗不顯示；手動排序合併預設同資料夾輸出，勾選時才開啟另存視窗。Apex One 安全政策仍須由機關資訊人員核可。" --latest
           }
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed" }
       - name: Check in extracted source files and remove bootstrap archive
