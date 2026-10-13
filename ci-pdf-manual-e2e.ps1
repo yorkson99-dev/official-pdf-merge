@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $root = Join-Path $env:RUNNER_TEMP 'official-pdf-manual-e2e'
 New-Item -ItemType Directory -Force $root | Out-Null
 $one = Join-Path $root 'first.pdf'
-$two = Join-Path $root 'second.pdf'
+$two = Join-Path $root 'second.odt'
 Copy-Item (Join-Path $PSScriptRoot 'testdata/sample0.pdf') $one -Force
 Copy-Item (Join-Path $PSScriptRoot 'testdata/sample0.pdf') $two -Force
 Add-Type -TypeDefinition @'
@@ -23,7 +23,7 @@ try {
   for ($i=0; $i -lt 30; $i++) {
     Start-Sleep -Milliseconds 300
     $p.Refresh()
-    if ($p.HasExited) { throw "Manual GUI exited unexpectedly, exit=$($p.ExitCode)" }
+    if ($p.HasExited) { throw "Mixed manual GUI exited unexpectedly, exit=$($p.ExitCode)" }
     if ($p.MainWindowHandle -ne [IntPtr]::Zero) {
       $list = [PDFManualWin32]::GetDlgItem($p.MainWindowHandle, 201)
       if ($list -ne [IntPtr]::Zero) { break }
@@ -33,7 +33,7 @@ try {
   [UIntPtr]$result = [UIntPtr]::Zero
   $ok = [PDFManualWin32]::SendMessageTimeout($list, 0x018B, [UIntPtr]::Zero, [IntPtr]::Zero, 2, 3000, [ref]$result)
   if ($ok -eq [IntPtr]::Zero -or $result.ToUInt64() -ne 2) {
-    throw "Expected two PDFs on the manual list, got $($result.ToUInt64())"
+    throw "Expected PDF + ODT on the manual list, got $($result.ToUInt64())"
   }
   [void][PDFManualWin32]::SendMessageTimeout($list, 0x0186, [UIntPtr]::new([uint32]1),
     [IntPtr]::Zero, 2, 3000, [ref]$result)
@@ -53,7 +53,7 @@ try {
   $ok = [PDFManualWin32]::SendMessageTimeout($list, 0x018B, [UIntPtr]::Zero,
     [IntPtr]::Zero, 2, 3000, [ref]$result)
   if ($ok -eq [IntPtr]::Zero -or $result.ToUInt64() -ne 0) { throw 'Clear list failed' }
-  Write-Output 'PASS: manual PDF two-file add, repeated move, remove, clear and responsive window.'
+  Write-Output 'PASS: manual mixed PDF/ODT list accepts editable files; repeated move, remove, clear and responsive window.'
 } finally {
   $p.Refresh()
   if (!$p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
