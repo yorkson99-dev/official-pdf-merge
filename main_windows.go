@@ -18,6 +18,7 @@ import (
 // Native Win32 controls: fast startup, no .NET, Python, or web runtime.
 var (
 	u32                       = syscall.NewLazyDLL("user32.dll")
+	g32                       = syscall.NewLazyDLL("gdi32.dll")
 	k32                       = syscall.NewLazyDLL("kernel32.dll")
 	s32                       = syscall.NewLazyDLL("shell32.dll")
 	comdlg                    = syscall.NewLazyDLL("comdlg32.dll")
@@ -55,7 +56,7 @@ var (
 	pDragFinish               = s32.NewProc("DragFinish")
 	pGetOpenFileName          = comdlg.NewProc("GetOpenFileNameW")
 	pGetSaveFileName          = comdlg.NewProc("GetSaveFileNameW")
-	pCreateFont               = u32.NewProc("CreateFontW")
+	pCreateFont               = g32.NewProc("CreateFontW")
 	pSetProcessDPIAware       = u32.NewProc("SetProcessDPIAware")
 	pGetKeyState              = u32.NewProc("GetKeyState")
 	pSetFocus                 = u32.NewProc("SetFocus")
@@ -820,7 +821,7 @@ func main() {
 	wc := wndClass{cbSize: uint32(unsafe.Sizeof(wndClass{})), lpfnWndProc: windowProc, hInstance: instance, hbrBackground: 6, lpszClassName: className}
 	atom, _, e := pRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))
 	if atom == 0 {
-		_ = e
+		pMessageBox.Call(0, uintptr(unsafe.Pointer(str("無法註冊 Windows 視窗類別："+e.Error()))), uintptr(unsafe.Pointer(str("公文 PDF 快合｜啟動失敗"))), MB_OK|MB_ICONERROR)
 		return
 	}
 	screenX, _, _ := pGetSystemMetrics.Call(0)
@@ -833,8 +834,9 @@ func main() {
 	if y < 0 {
 		y = 0
 	}
-	hwnd, _, _ := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("快合 PDF｜極簡快速合併"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 770, 630, 0, 0, instance, 0)
+	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("快合 PDF｜極簡快速合併"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 770, 630, 0, 0, instance, 0)
 	if hwnd == 0 {
+		pMessageBox.Call(0, uintptr(unsafe.Pointer(str("無法建立程式視窗："+windowErr.Error()))), uintptr(unsafe.Pointer(str("公文 PDF 快合｜啟動失敗"))), MB_OK|MB_ICONERROR)
 		return
 	}
 	if len(os.Args) > 1 {
