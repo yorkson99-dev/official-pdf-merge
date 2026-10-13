@@ -46,7 +46,7 @@ jobs:
           Write-Output 'PASS: conversion uses native COM only'
       - name: Exercise COM IDispatch ABI on hosted Windows runner
         shell: pwsh
-        run: go test -run '^TestNativeCOMDispatchOnWindows
+        run: go test -run TestNativeCOMDispatchOnWindows -v .
       - name: Build single Windows x64 GUI executable
         shell: pwsh
         run: |
