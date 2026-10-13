@@ -17,7 +17,7 @@ public class PDFManualWin32 {
 }
 '@
 $exe = Join-Path $PSScriptRoot '公文PDF快合.exe'
-$p = Start-Process -FilePath $exe -ArgumentList @($one,$two) -PassThru
+$p = Start-Process -FilePath $exe -ArgumentList @('--manual',$one,$two) -PassThru
 try {
   $list = [IntPtr]::Zero
   for ($i=0; $i -lt 30; $i++) {
