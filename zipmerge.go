@@ -207,7 +207,7 @@ func (j *officialJob) outputName(detailed bool) (string, error) {
 	}
 	return agency + suffix + ".pdf", nil
 }
-func mergeOfficialZIP(j *officialJob, out string) (int, error) {
+// Test seam: production uses the installed Office/NDC ODF converter.\nvar convertEditable = convertDocumentToPDF\n\nfunc mergeOfficialZIP(j *officialJob, out string) (int, error) {
 	zr, err := zip.OpenReader(j.ZipPath)
 	if err != nil {
 		return 0, err
@@ -257,7 +257,7 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
 		}
 		if ext != ".pdf" {
 			converted := filepath.Join(dir, fmt.Sprintf("%04d-converted.pdf", i))
-			if err := convertDocumentToPDF(name, converted); err != nil {
+			if err := convertEditable(name, converted); err != nil {
 				return 0, fmt.Errorf("附件 %s 轉成 PDF 失敗：%w", e.name, err)
 			}
 			if st, err := os.Stat(converted); err != nil || st.Size() < 16 {
