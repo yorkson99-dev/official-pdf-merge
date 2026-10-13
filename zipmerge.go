@@ -29,38 +29,7 @@ type officialJob struct {
 	TextRead                       bool
 }
 
-var attachmentName = regexp.MustCompile(`(?i)^(.*?)_(?:ATTCH|ATTACH)([0-9]+)\.[^.]+package main
-
-// Official-letter ZIP filtering, file ordering and naming. Pure standard library.
-// ZIP entries are only read; no file is extracted outside a temporary private folder.
-
-import (
-	"archive/zip"
-	"bytes"
-	"errors"
-	"fmt"
-	"io"
-	"os"
-	"path/filepath"
-	"regexp"
-	"sort"
-	"strings"
-)
-
-type officialEntry struct {
-	index       int
-	name, group string
-	number      int
-	attachment  bool
-}
-type officialJob struct {
-	ZipPath                        string
-	Entries                        []officialEntry
-	Agency, Date, DocumentNo, Kind string
-	TextRead                       bool
-}
-
-)
+var attachmentName = regexp.MustCompile(`(?i)^(.*?)_(?:ATTCH|ATTACH)([0-9]+)\.[^.]+$`)
 var agencyLine = regexp.MustCompile(`(?m)^([^\r\n：:]{2,70}?)[ \t　]*(開會通知單|書函|通知|函)[ \t　]*$`)
 var dateLine = regexp.MustCompile(`發文日期[：:\s]*(?:中華民國)?\s*([0-9]{2,3})\s*年\s*([0-9]{1,2})\s*月\s*([0-9]{1,2})\s*日`)
 var numberLine = regexp.MustCompile(`發文字號[：:\s]*([^\r\n]*?號)`)
