@@ -31,6 +31,8 @@ public class Win32PDFSmoke {
     IntPtr lparam, uint flags, uint timeout, out UIntPtr result);
 }
 '@
+$env:FASTPDF_STARTUP_LOG = Join-Path $root 'win32-trace.log'
+if (Test-Path $env:FASTPDF_STARTUP_LOG) { Remove-Item $env:FASTPDF_STARTUP_LOG }
 $exe = Join-Path $PSScriptRoot '公文PDF快合.exe'
 $p = Start-Process -FilePath $exe -ArgumentList @($archive) -PassThru
 try {
@@ -59,6 +61,16 @@ try {
     break
   }
   if (!$passed) {
+    Write-Output "FILES UNDER TEST DIRECTORY:"
+    Get-ChildItem -Recurse $root | ForEach-Object { Write-Output ("  " + $_.FullName + " " + $_.Length) }
+    Write-Output "STARTUP TRACE:"
+    if (Test-Path $env:FASTPDF_STARTUP_LOG) { Get-Content -Raw $env:FASTPDF_STARTUP_LOG | Write-Output }
+    $p.Refresh()
+    Write-Output "PROCESS: responding=$($p.Responding), title=$($p.MainWindowTitle), window=$($p.MainWindowHandle)"
+    $statusHandle = [Win32PDFSmoke]::GetDlgItem($p.MainWindowHandle, 202)
+    $text = New-Object System.Text.StringBuilder 4096
+    [void][Win32PDFSmoke]::GetWindowText($statusHandle, $text, $text.Capacity)
+    Write-Output "STATUS: $($text.ToString())"
     throw "ZIP output or success status was not observed within 25 seconds"
   }
 } finally {
