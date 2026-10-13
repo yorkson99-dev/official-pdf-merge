@@ -275,15 +275,9 @@ func setMode(mode int) {
 	for _, h := range pdfControls {
 		if mode == 1 { pShowWindow.Call(h, SW_SHOW) } else { pShowWindow.Call(h, SW_HIDE) }
 	}
-	traceStartup("setMode titles")
-	if mode == 0 {
-		pSetWindowText.Call(hwndTabZip, uintptr(unsafe.Pointer(str("● 公文 ZIP｜自動合併"))))
-		pSetWindowText.Call(hwndTabPDF, uintptr(unsafe.Pointer(str("一般 PDF｜手動排序"))))
-		if !isMerging { status("待命：拖入公文 ZIP，即自動存回 ZIP 同一資料夾。") }
-	} else {
-		pSetWindowText.Call(hwndTabZip, uintptr(unsafe.Pointer(str("公文 ZIP｜自動合併"))))
-		pSetWindowText.Call(hwndTabPDF, uintptr(unsafe.Pointer(str("● 一般 PDF｜手動排序"))))
-		if !isMerging { refresh(selected()) }
+	traceStartup("setMode panel ready")
+	if !isMerging {
+		if mode == 0 { status("待命：拖入公文 ZIP，即自動存回 ZIP 同一資料夾。") } else { refresh(selected()) }
 	}
 	traceStartup("setMode done")
 }
