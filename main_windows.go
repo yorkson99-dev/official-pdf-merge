@@ -194,6 +194,7 @@ type mergeResult struct {
 	path  string
 	count int
 	err   error
+	warning string
 }
 type desktopResult struct {
 	files []string
@@ -647,7 +648,7 @@ func startOfficialZIP(path string) {
 		if err != nil { result.err = err; return }
 		result.path = out
 		result.count, result.err = mergeOfficialZIP(job, out)
-		if result.err == nil && nameErr != nil { result.err = fmt.Errorf("已合併成功，惟無法辨識完整檔名；請核對 %s（%v）", filepath.Base(out), nameErr) }
+		if result.err == nil && nameErr != nil { result.warning = "（檔名待核對）" }
 	}()
 }
 
@@ -880,7 +881,7 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 			status("合併失敗：" + result.err.Error())
 			alert("合併失敗：\n"+result.err.Error(), true)
 		} else {
-			status(fmt.Sprintf("已完成 %d 頁：%s", result.count, result.path))
+			status(fmt.Sprintf("已完成 %d 頁%s：%s", result.count, result.warning, result.path))
 		}
 		return 0
 	case WM_DESTROY:
