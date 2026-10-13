@@ -629,8 +629,6 @@ func startOfficialZIP(path string) {
 	detailed := send(hwndDetail, BM_GETCHECK, 0, 0) != 0
 	traceStartup("ZIP job started")
 	isMerging = true
-	pEnableWindow.Call(hwndZip, 0)
-	pEnableWindow.Call(hwndMerge, 0)
 	status("正在處理：" + filepath.Base(path))
 	go func() {
 		var result mergeResult
@@ -741,7 +739,6 @@ func startMerge() {
 	}
 	snapshot := append([]string(nil), winFiles...)
 	isMerging = true
-	pEnableWindow.Call(hwndMerge, 0)
 	status("正在合併 PDF，請勿關閉此視窗…")
 	go func() {
 		count, e := mergePDFFiles(snapshot, out)
@@ -888,15 +885,18 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		resultMu.Lock()
 		result := latestResult
 		resultMu.Unlock()
+		traceStartup("WM_APP+1 result obtained")
 		isMerging = false
-		pEnableWindow.Call(hwndMerge, 1)
-		pEnableWindow.Call(hwndZip, 1)
+		traceStartup("WM_APP+1 flags restored")
 		if result.err != nil {
+			traceStartup("WM_APP+1 failure update begin")
 			status("合併失敗：" + result.err.Error())
 			alert("合併失敗：\n"+result.err.Error(), true)
 		} else {
+			traceStartup("WM_APP+1 success update begin")
 			status(fmt.Sprintf("已完成 %d 頁%s：%s", result.count, result.warning, result.path))
 		}
+		traceStartup("WM_APP+1 done")
 		return 0
 	case WM_DESTROY:
 		pPostQuitMessage.Call(0)
