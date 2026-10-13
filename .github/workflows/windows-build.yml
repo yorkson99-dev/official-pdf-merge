@@ -59,6 +59,17 @@ jobs:
           name: OfficialPDFMerge-win64
           path: 公文PDF快合.exe
           if-no-files-found: error
+      - name: Publish portable EXE release v1.1.0
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v1.1.0 --json tagName *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create v1.1.0 "公文PDF快合.exe#OfficialPDFMerge.exe" --target main --title "公文 PDF 快合 v1.1.0" --notes "Win32 原生免安裝版。公文 ZIP 拖入即自動合併，原目錄儲存、自動命名及附件排序；一般 PDF 獨立模式。Windows 啟動與 ZIP 完成後介面回應測試通過。此 EXE 未簽章，請遵循機關資訊安全規範。" --latest
+            if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed" }
+          }
       - name: Check in extracted source files and remove bootstrap archive
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: pwsh
