@@ -129,6 +129,7 @@ const (
 	ID_MERGE             = 108
 	ID_ADD_ZIP           = 109
 	ID_FULL_NAME         = 110
+    ID_SAVE_AS           = 111
 	ID_LIST              = 201
 	ID_STATUS            = 202
 )
@@ -270,7 +271,7 @@ type mergeResult struct {
 	warning string
 }
 var (
-	hwndMain, hwndList, hwndStatus, hwndMerge, hwndZip, hwndDetail uintptr
+	hwndMain, hwndList, hwndStatus, hwndMerge, hwndZip, hwndDetail, hwndSaveAs uintptr
 	oldListProc                                                    uintptr
 	winFiles                                                       []string
 	dragFrom                                                       = -1
@@ -349,7 +350,10 @@ func initUI() {
     makeChild("STATIC","PDF、Word、ODF、Excel、PowerPoint 附件自動轉檔並依序合併",43,161,594,30,0,0)
     hwndZip=makeChild("BUTTON","選擇公文 ZIP",43,201,604,49,WS_TABSTOP|BS_OWNERDRAW,ID_ADD_ZIP)
     hwndDetail=makeChild("BUTTON","使用完整日期與發文字號命名",45,264,582,30,WS_TABSTOP|0x00000003,ID_FULL_NAME)
-    makeChild("STATIC","一般文件　手動排序合併",42,333,575,28,0,0)
+    makeChild("STATIC","一般文件　手動排序合併",42,333,335,28,0,0)
+    // Default is zero-dialog output in the first file's directory.
+    // Opt-in checkbox preserves the previous Save As picker on demand.
+    hwndSaveAs=makeChild("BUTTON","合併時開啟另存視窗",414,329,230,31,WS_TABSTOP|0x00000003,ID_SAVE_AS)
     hwndList=makeChild("LISTBOX","",42,370,437,141,WS_BORDER|WS_VSCROLL|WS_TABSTOP|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT,ID_LIST)
     oldListProc,_,_=pSetWindowLongPtr.Call(hwndList,GWLP_WNDPROC,listProc)
     makeChild("BUTTON","加入文件",491,370,154,32,WS_TABSTOP|BS_OWNERDRAW,ID_ADD)
@@ -660,8 +664,18 @@ func chooseOutput() string {
 func startMerge() {
     if isMerging { return }
     if len(winFiles) < 2 { status("請先加入至少 2 份文件。"); return }
-    out := chooseOutput()
-    if out == "" { return }
+    var out string
+    if send(hwndSaveAs, BM_GETCHECK, 0, 0) != 0 {
+        out = chooseOutput()
+        if out == "" { return }
+    } else {
+        var err error
+        out, err = autoMergedPath(winFiles)
+        if err != nil {
+            alert("無法取得預設儲存路徑：\n"+err.Error(), true)
+            return
+        }
+    }
     startMixedWorker(winFiles, out)
 }
 func removeSelected() {
