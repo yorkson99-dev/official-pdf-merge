@@ -10,6 +10,7 @@ import (
     "os/exec"
     "path/filepath"
     "strings"
+    "syscall"
     "time"
 )
 
@@ -147,6 +148,9 @@ func convertViaOffice(input, output, ext string) error {
         if _, e := os.Stat(p); e == nil { ps = p }
     }
     cmd := exec.CommandContext(ctx, ps, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", officeConvertScript)
+    // Hide only the auxiliary console window; keep all normal Office/AV
+    // security controls and error reporting in force.
+    cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
     cmd.WaitDelay = 3*time.Second
     cmd.Env = append(os.Environ(), "OFFICIAL_PDF_SOURCE="+input,
         "OFFICIAL_PDF_TARGET="+output, "OFFICIAL_PDF_KIND="+kind)
