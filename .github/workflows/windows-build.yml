@@ -44,6 +44,9 @@ jobs:
           $env:CGO_ENABLED='0'
           go build -trimpath -ldflags='-H=windowsgui -s -w' -o '公文PDF快合.exe' .
           if ($LASTEXITCODE -ne 0) { throw 'Go build failed' }
+      - name: Build diagnostic console executable (CI only)
+        shell: pwsh
+        run: go build -trimpath -o debug-console.exe .
       - name: GUI startup smoke test (real Windows desktop)
         shell: pwsh
         run: ./ci-startup-smoke.ps1
