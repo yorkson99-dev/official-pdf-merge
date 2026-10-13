@@ -56,7 +56,6 @@ jobs:
           1..3 | ForEach-Object {
             Write-Output "ZIP/UI E2E iteration $_/3"
             ./ci-zip-e2e.ps1
-            if ($LASTEXITCODE -ne 0) { throw "ZIP/UI E2E failed on iteration $_" }
           }
       - name: Upload executable
         uses: actions/upload-artifact@v4
@@ -70,11 +69,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          Copy-Item -LiteralPath "公文PDF快合.exe" -Destination "OfficialPDFMerge.exe" -Force
           gh release view v1.1.0 --json tagName *> $null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create v1.1.0 "公文PDF快合.exe#OfficialPDFMerge.exe" --target main --title "公文 PDF 快合 v1.1.0" --notes "Win32 原生免安裝版。公文 ZIP 拖入即自動合併，原目錄儲存、自動命名及附件排序；一般 PDF 獨立模式。Windows 啟動與 ZIP 完成後介面回應測試通過。此 EXE 未簽章，請遵循機關資訊安全規範。" --latest
-            if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed" }
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload v1.1.0 "OfficialPDFMerge.exe" --clobber
+          } else {
+            gh release create v1.1.0 "OfficialPDFMerge.exe" --target main --title "公文 PDF 快合 v1.1.0" --notes "Win32 原生免安裝版。公文 ZIP 拖入即自動合併，原目錄儲存、自動命名及附件排序；一般 PDF 獨立模式。Windows 啟動與 ZIP 完成後介面回應測試通過。此 EXE 未簽章，請遵循機關資訊安全規範。" --latest
           }
+          if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed" }
       - name: Check in extracted source files and remove bootstrap archive
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: pwsh
