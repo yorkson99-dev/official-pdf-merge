@@ -176,7 +176,10 @@ func (j *officialJob) outputName(detailed bool) (string, error) {
 	}
 	return agency + suffix + ".pdf", nil
 }
-// Test seam: production uses the installed Office/NDC ODF converter.\nvar convertEditable = convertDocumentToPDF\n\nfunc mergeOfficialZIP(j *officialJob, out string) (int, error) {
+// Test seam: production uses the installed Office/NDC ODF converter.
+var convertEditable = convertDocumentToPDF
+
+func mergeOfficialZIP(j *officialJob, out string) (int, error) {
 	zr, err := zip.OpenReader(j.ZipPath)
 	if err != nil {
 		return 0, err
