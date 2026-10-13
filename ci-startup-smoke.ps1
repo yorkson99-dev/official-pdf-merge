@@ -21,6 +21,16 @@ try {
     Start-Sleep -Milliseconds 500
     $proc.Refresh()
     if ($proc.HasExited) {
+      Write-Output "GUI process exited, ExitCode=$($proc.ExitCode). Capturing diagnostics from console variant..."
+      $dbgExe = Join-Path $PSScriptRoot 'debug-console.exe'
+      $logOut = Join-Path $PSScriptRoot 'startup-stdout.log'
+      $logErr = Join-Path $PSScriptRoot 'startup-stderr.log'
+      $dbg = Start-Process -FilePath $dbgExe -PassThru -RedirectStandardOutput $logOut -RedirectStandardError $logErr
+      Start-Sleep -Seconds 3
+      $dbg.Refresh()
+      if (!$dbg.HasExited) { Stop-Process -Id $dbg.Id -Force -ErrorAction SilentlyContinue }
+      if (Test-Path $logOut) { Write-Output "STDOUT:"; Get-Content -Raw $logOut | Write-Output }
+      if (Test-Path $logErr) { Write-Output "STDERR:"; Get-Content -Raw $logErr | Write-Output }
       throw "Process exited before showing a window. ExitCode=$($proc.ExitCode)"
     }
     $hwnd = [Win32Window]::FindWindow('FastPDFMergeNativeGUI', $null)
