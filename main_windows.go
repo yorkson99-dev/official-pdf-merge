@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -631,6 +632,10 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 	return r
 }
 func main() {
+	// Win32 windows and their GetMessage loop must stay on the same OS thread.
+	// Go may otherwise migrate this goroutine and leave the original window unresponsive.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	traceStartup("main entry")
 	pSetProcessDPIAware.Call()
 	instance, _, _ := pGetModuleHandle.Call(0)
