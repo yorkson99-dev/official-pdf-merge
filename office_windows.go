@@ -160,14 +160,3 @@ func convertViaOffice(input, output, ext string) error {
     return verifyConvertedPDF(output)
 }
 
-func verifyConvertedPDF(path string) error {
-    f, err := os.Open(path)
-    if err != nil { return fmt.Errorf("沒有產生 PDF：%w", err) }
-    defer f.Close()
-    var sig [5]byte
-    n, err := f.Read(sig[:])
-    if err != nil || n != len(sig) || string(sig[:]) != "%PDF-" {
-        return errors.New("轉檔完成，但輸出不是有效的 PDF")
-    }
-    return nil
-}
