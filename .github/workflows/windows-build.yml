@@ -44,6 +44,9 @@ jobs:
           $env:CGO_ENABLED='0'
           go build -trimpath -ldflags='-H=windowsgui -s -w' -o '公文PDF快合.exe' .
           if ($LASTEXITCODE -ne 0) { throw 'Go build failed' }
+      - name: Embed native application icon
+        shell: pwsh
+        run: ./ci-embed-icon.ps1
       - name: Build diagnostic console executable (CI only)
         shell: pwsh
         run: go build -trimpath -o debug-console.exe .
@@ -66,18 +69,18 @@ jobs:
           name: OfficialPDFMerge-win64
           path: 公文PDF快合.exe
           if-no-files-found: error
-      - name: Publish portable EXE release v1.2.0
+      - name: Publish portable EXE release v1.3.0
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           Copy-Item -LiteralPath "公文PDF快合.exe" -Destination "OfficialPDFMerge.exe" -Force
-          gh release view v1.2.0 --json tagName *> $null
+          gh release view v1.3.0 --json tagName *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload v1.2.0 "OfficialPDFMerge.exe" --clobber
+            gh release upload v1.3.0 "OfficialPDFMerge.exe" --clobber
           } else {
-            gh release create v1.2.0 "OfficialPDFMerge.exe" --target main --title "公文 PDF 快合 v1.2.0" --notes "Win32 原生免安裝極簡版。移除桌面掃描及頁籤切換；公文 ZIP 拖入即存原目錄，自動命名與排序附件；一般 PDF 同視窗手動排序。完成 Windows ZIP 與 PDF 介面壓力測試。此 EXE 未簽章，請遵循機關資訊安全規範。" --latest
+            gh release create v1.3.0 "OfficialPDFMerge.exe" --target main --title "公文 PDF 快合 v1.3.0" --notes "Win32 原生免安裝極簡版。移除桌面掃描及頁籤切換；公文 ZIP 拖入即存原目錄，自動命名與排序附件；一般 PDF 同視窗手動排序。完成 Windows ZIP 與 PDF 介面壓力測試。此 EXE 未簽章，請遵循機關資訊安全規範。" --latest
           }
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed" }
       - name: Check in extracted source files and remove bootstrap archive
