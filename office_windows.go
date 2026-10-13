@@ -20,17 +20,22 @@ func convertDocumentToPDF(input, output string) error {
     if !supportedOfficialExt(ext) || ext == ".pdf" {
         return fmt.Errorf("不支援的可編輯檔格式：%s", ext)
     }
-    // Existing NDC ODF installations may have a LibreOffice-compatible
-    // soffice command. Use that for native ODF formats when available.
-    if ext == ".odt" || ext == ".ods" || ext == ".odp" {
+    // NDC ODF Application Tools can show a bootstrap.ini lock error when
+    // launched headlessly in an existing office session. Microsoft Office has
+    // successfully converted ODT on the target workstation, so prefer it.
+    officeErr := convertViaOffice(input, output, ext)
+    if officeErr == nil { return nil }
+    // NDC fallback is deliberately OPT-IN, never run automatically: its
+    // installer-specific bootstrap warning can block a zero-click workflow.
+    if (ext == ".odt" || ext == ".ods" || ext == ".odp") &&
+        os.Getenv("FASTPDF_ENABLE_NDC_FALLBACK") == "1" {
         if soffice := findNDCOffice(); soffice != "" {
-            if err := convertViaODF(soffice, input, output); err == nil {
+            if ndcErr := convertViaODF(soffice, input, output); ndcErr == nil {
                 return nil
             }
-            // Fall back to Office, which also supports ODT/ODS/ODP.
         }
     }
-    return convertViaOffice(input, output, ext)
+    return officeErr
 }
 
 func findNDCOffice() string {
