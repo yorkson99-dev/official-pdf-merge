@@ -208,6 +208,7 @@ var (
 	hwndTabZip, hwndTabPDF uintptr
 	zipControls, pdfControls []uintptr
 	uiMode int
+	modeInitialized bool
 	isSorting bool
 	latestDesktop desktopResult
 	oldListProc                                                    uintptr
@@ -262,8 +263,10 @@ func addPanelControl(mode int, class, title string, x, y, w, h int, style uint32
 	return p
 }
 func setMode(mode int) {
+	if modeInitialized && uiMode == mode { return }
 	traceStartup("setMode begin")
 	uiMode = mode
+	modeInitialized = true
 	traceStartup("setMode zip controls")
 	for _, h := range zipControls {
 		if mode == 0 { pShowWindow.Call(h, SW_SHOW) } else { pShowWindow.Call(h, SW_HIDE) }
@@ -869,6 +872,9 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 			pDragFinish.Call(w)
 		}
 		return 0
+	case WM_APP + 3:
+		if len(os.Args) > 1 { handleInputFiles(os.Args[1:]) }
+		return 0
 	case WM_APP + 2:
 		resultMu.Lock()
 		r := latestDesktop
@@ -934,11 +940,7 @@ func main() {
 		pMessageBox.Call(0, uintptr(unsafe.Pointer(str("無法建立程式視窗："+windowErr.Error()))), uintptr(unsafe.Pointer(str("公文 PDF 快合｜啟動失敗"))), MB_OK|MB_ICONERROR)
 		return
 	}
-	if len(os.Args) > 1 {
-		traceStartup("pre-message arguments begin")
-		handleInputFiles(os.Args[1:])
-		traceStartup("pre-message arguments done")
-	}
+	if len(os.Args) > 1 { pPostMessage.Call(hwndMain, WM_APP+3, 0, 0) }
 	traceStartup("enter message loop")
 	var m msg
 	for {
