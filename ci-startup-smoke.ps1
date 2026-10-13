@@ -1,5 +1,7 @@
 # Windows GUI startup smoke test. Runs only in GitHub-hosted Windows runner.
 $ErrorActionPreference = 'Stop'
+$env:FASTPDF_STARTUP_LOG = Join-Path $PSScriptRoot 'startup-win32.log'
+if (Test-Path $env:FASTPDF_STARTUP_LOG) { Remove-Item $env:FASTPDF_STARTUP_LOG }
 $exe = Join-Path $PSScriptRoot '公文PDF快合.exe'
 if (!(Test-Path $exe)) { throw "Missing exe: $exe" }
 Add-Type -TypeDefinition @'
@@ -44,7 +46,13 @@ try {
       break
     }
   }
-  if (!$seen) { throw "No Win32 main window appeared after 10 seconds. Process ID=$($proc.Id)" }
+  if (!$seen) {
+    Write-Output "Win32 startup trace:"
+    if (Test-Path $env:FASTPDF_STARTUP_LOG) { Get-Content -Raw $env:FASTPDF_STARTUP_LOG | Write-Output }
+    $proc.Refresh()
+    Write-Output "Process state: ID=$($proc.Id), SessionID=$($proc.SessionId), MainWindowHandle=$($proc.MainWindowHandle), MainWindowTitle='$($proc.MainWindowTitle)'"
+    throw "No Win32 main window appeared after 10 seconds. Process ID=$($proc.Id)"
+  }
 } finally {
   $proc.Refresh()
   if (!$proc.HasExited) {
