@@ -57,6 +57,7 @@ var (
     pRoundRect                = g32.NewProc("RoundRect")
     pSetBkMode                = g32.NewProc("SetBkMode")
     pSetTextColor             = g32.NewProc("SetTextColor")
+    pSetBkColor               = g32.NewProc("SetBkColor")
     pGetStockObject           = g32.NewProc("GetStockObject")
 	pSetProcessDPIAware       = u32.NewProc("SetProcessDPIAware")
 	pGetKeyState              = u32.NewProc("GetKeyState")
@@ -278,6 +279,7 @@ var (
 	latestResult                                                   mergeResult
 	fontHandle                                                     uintptr
     titleFont uintptr
+    statusBrush uintptr
 	windowProc                                                     = syscall.NewCallback(wndProc)
 	listProc                                                       = syscall.NewCallback(listWndProc)
 )
@@ -356,6 +358,7 @@ func initUI() {
     makeChild("BUTTON","移除",491,451,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_REMOVE)
     makeChild("BUTTON","清空",572,451,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_CLEAR)
     hwndMerge=makeChild("BUTTON","合併一般文件",42,524,603,40,WS_TABSTOP|BS_OWNERDRAW,ID_MERGE)
+    statusBrush,_,_=pCreateSolidBrush.Call(winColor(236,242,249))
     hwndStatus=makeChild("STATIC","待命｜拖入 ZIP 即自動產出 PDF",38,592,597,26,SS_LEFTNOWORDWRAP|SS_ENDELLIPSIS|SS_NOPREFIX,ID_STATUS)
     pDragAcceptFiles.Call(hwndMain,1)
     pDragAcceptFiles.Call(hwndList,1)
@@ -758,6 +761,14 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
         paintButton(l)
         return 1
     case WM_CTLCOLORSTATIC:
+        if l == hwndStatus && statusBrush != 0 {
+            // Paint over the old status before rendering new text. Transparent
+            // static controls can leave previous long filenames behind.
+            pSetBkMode.Call(w,2)
+            pSetBkColor.Call(w,winColor(236,242,249))
+            pSetTextColor.Call(w,winColor(46,65,92))
+            return statusBrush
+        }
         pSetBkMode.Call(w,1)
         pSetTextColor.Call(w,winColor(46,65,92))
         b,_,_:=pGetStockObject.Call(5)
@@ -803,6 +814,7 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		traceStartup("WM_APP+1 done")
 		return 0
 	case WM_DESTROY:
+        if statusBrush != 0 { pDeleteObject.Call(statusBrush); statusBrush = 0 }
 		pPostQuitMessage.Call(0)
 		return 0
 	}
