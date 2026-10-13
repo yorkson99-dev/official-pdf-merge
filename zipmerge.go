@@ -168,7 +168,11 @@ func (j *officialJob) outputName(detailed bool) (string, error) {
 		if j.Date == "" || j.DocumentNo == "" {
 			return "", errors.New("無法完整辨識發文日期及發文字號，請使用一般命名或手動修改")
 		}
-		return cleanComponent(agency+j.Date+j.DocumentNo+j.Kind) + ".pdf", nil
+		name := agency+j.Date+j.DocumentNo+j.Kind
+        if len(j.Entries) > 1 {
+            name += "及其附件"
+        }
+        return cleanComponent(name) + ".pdf", nil
 	}
 	suffix := "公文"
 	if len(j.Entries) > 1 {
