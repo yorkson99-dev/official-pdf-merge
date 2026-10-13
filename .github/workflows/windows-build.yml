@@ -36,6 +36,9 @@ jobs:
           cache: false
       - name: Unit tests
         run: go test ./...
+      - name: Validate embedded Office converter syntax
+        shell: pwsh
+        run: ./ci-office-script-parse.ps1
       - name: Build single Windows x64 GUI executable
         shell: pwsh
         run: |
