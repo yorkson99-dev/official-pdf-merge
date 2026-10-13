@@ -262,13 +262,17 @@ func addPanelControl(mode int, class, title string, x, y, w, h int, style uint32
 	return p
 }
 func setMode(mode int) {
+	traceStartup("setMode begin")
 	uiMode = mode
+	traceStartup("setMode zip controls")
 	for _, h := range zipControls {
 		if mode == 0 { pShowWindow.Call(h, SW_SHOW) } else { pShowWindow.Call(h, SW_HIDE) }
 	}
+	traceStartup("setMode pdf controls")
 	for _, h := range pdfControls {
 		if mode == 1 { pShowWindow.Call(h, SW_SHOW) } else { pShowWindow.Call(h, SW_HIDE) }
 	}
+	traceStartup("setMode titles")
 	if mode == 0 {
 		pSetWindowText.Call(hwndTabZip, uintptr(unsafe.Pointer(str("● 公文 ZIP｜自動合併"))))
 		pSetWindowText.Call(hwndTabPDF, uintptr(unsafe.Pointer(str("一般 PDF｜手動排序"))))
@@ -278,6 +282,7 @@ func setMode(mode int) {
 		pSetWindowText.Call(hwndTabPDF, uintptr(unsafe.Pointer(str("● 一般 PDF｜手動排序"))))
 		if !isMerging { refresh(selected()) }
 	}
+	traceStartup("setMode done")
 }
 func initUI() {
 	fontHeight := int32(-18)
@@ -530,6 +535,7 @@ func startDesktopSort(horizontal bool) {
 
 // ZIP exports use a separate workflow rather than adding opinion sheets to the manual list.
 func handleInputFiles(files []string) {
+	traceStartup("handleInputFiles begin")
 	var zips []string
 	var pdfs []string
 	for _, p := range files {
@@ -541,6 +547,7 @@ func handleInputFiles(files []string) {
 		}
 	}
 	if len(zips) > 0 {
+		traceStartup("handleInputFiles has ZIP")
 		setMode(0)
 		if len(zips) != 1 || len(pdfs) > 0 {
 			alert("請一次拖入一份公文 ZIP；一般 PDF 請另外拖入。", true)
@@ -928,7 +935,9 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 {
+		traceStartup("pre-message arguments begin")
 		handleInputFiles(os.Args[1:])
+		traceStartup("pre-message arguments done")
 	}
 	traceStartup("enter message loop")
 	var m msg
