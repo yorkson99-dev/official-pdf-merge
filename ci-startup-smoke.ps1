@@ -35,6 +35,13 @@ try {
       if (Test-Path $logErr) { Write-Output "STDERR:"; Get-Content -Raw $logErr | Write-Output }
       throw "Process exited before showing a window. ExitCode=$($proc.ExitCode)"
     }
+    # On hosted runners, FindWindow can be restricted by the window station.
+    # System.Diagnostics.Process still resolves this process' own main HWND.
+    if ($proc.MainWindowHandle -ne [IntPtr]::Zero -and $proc.MainWindowTitle -like '*快合 PDF*') {
+      $seen = $true
+      Write-Output "PASS: visible Win32 main window opened. Process ID=$($proc.Id), Handle=$($proc.MainWindowHandle), Title=$($proc.MainWindowTitle)"
+      break
+    }
     $hwnd = [Win32Window]::FindWindow('FastPDFMergeNativeGUI', $null)
     if ($hwnd -ne [IntPtr]::Zero) {
       [uint32]$windowPid = 0
