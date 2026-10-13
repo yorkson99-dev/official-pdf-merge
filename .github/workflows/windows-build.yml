@@ -50,6 +50,9 @@ jobs:
       - name: GUI startup smoke test (real Windows desktop)
         shell: pwsh
         run: ./ci-startup-smoke.ps1
+      - name: ZIP auto-merge and post-merge UI responsiveness test
+        shell: pwsh
+        run: ./ci-zip-e2e.ps1
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
