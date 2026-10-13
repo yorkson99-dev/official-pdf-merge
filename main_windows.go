@@ -623,6 +623,7 @@ func startOfficialZIP(path string) {
 	if isMerging { return }
 	setMode(0)
 	detailed := send(hwndDetail, BM_GETCHECK, 0, 0) != 0
+	traceStartup("ZIP job started")
 	isMerging = true
 	pEnableWindow.Call(hwndZip, 0)
 	pEnableWindow.Call(hwndMerge, 0)
@@ -635,9 +636,12 @@ func startOfficialZIP(path string) {
 			latestResult = result
 			resultMu.Unlock()
 			pPostMessage.Call(hwndMain, WM_APP+1, 0, 0)
+			traceStartup("ZIP notification posted")
 		}()
+		traceStartup("ZIP analysis begin")
 		job, err := analyzeZIP(path)
-		if err != nil { result.err = err; return }
+		if err != nil { traceStartup("ZIP analysis failed: "+err.Error()); result.err = err; return }
+		traceStartup(fmt.Sprintf("ZIP analysis done: %d entries", len(job.Entries)))
 		name, nameErr := job.outputName(detailed)
 		if nameErr != nil {
 			fallback := cleanComponent(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
@@ -647,7 +651,9 @@ func startOfficialZIP(path string) {
 		out, err := autoOutputPath(path, name)
 		if err != nil { result.err = err; return }
 		result.path = out
+		traceStartup("ZIP merge begin")
 		result.count, result.err = mergeOfficialZIP(job, out)
+		if result.err != nil { traceStartup("ZIP merge failed: "+result.err.Error()) } else { traceStartup("ZIP merge done") }
 		if result.err == nil && nameErr != nil { result.warning = "（檔名待核對）" }
 	}()
 }
@@ -871,6 +877,7 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		if r.horizontal { status("已依桌面橫排排序。") } else { status("已依桌面直排排序。") }
 		return 0
 	case WM_APP + 1:
+		traceStartup("WM_APP+1 received")
 		resultMu.Lock()
 		result := latestResult
 		resultMu.Unlock()
