@@ -34,6 +34,7 @@ var (
 	pMessageBox               = u32.NewProc("MessageBoxW")
 	pSetWindowText            = u32.NewProc("SetWindowTextW")
 	pEnableWindow             = u32.NewProc("EnableWindow")
+	pShowWindow               = u32.NewProc("ShowWindow")
 	pDestroyWindow            = u32.NewProc("DestroyWindow")
 	pPostQuitMessage          = u32.NewProc("PostQuitMessage")
 	pSetWindowLongPtr         = u32.NewProc("SetWindowLongPtrW")
@@ -85,6 +86,8 @@ const (
 	WM_LBUTTONUP         = 0x0202
 	WM_KEYDOWN           = 0x0100
 	WM_APP               = 0x8000
+	SW_HIDE              = 0
+	SW_SHOW              = 5
 	BN_CLICKED           = 0
 	LB_ADDSTRING         = 0x0180
 	LB_RESETCONTENT      = 0x0184
@@ -129,6 +132,8 @@ const (
 	ID_MERGE             = 108
 	ID_ADD_ZIP           = 109
 	ID_FULL_NAME         = 110
+	ID_TAB_ZIP           = 111
+	ID_TAB_PDF           = 112
 	ID_LIST              = 201
 	ID_STATUS            = 202
 )
@@ -190,9 +195,20 @@ type mergeResult struct {
 	count int
 	err   error
 }
+type desktopResult struct {
+	files []string
+	original []string
+	ok bool
+	horizontal bool
+}
 
 var (
 	hwndMain, hwndList, hwndStatus, hwndMerge, hwndZip, hwndDetail uintptr
+	hwndTabZip, hwndTabPDF uintptr
+	zipControls, pdfControls []uintptr
+	uiMode int
+	isSorting bool
+	latestDesktop desktopResult
 	oldListProc                                                    uintptr
 	winFiles                                                       []string
 	dragFrom                                                       = -1
@@ -239,27 +255,60 @@ func makeChild(class, text string, x, y, w, h int, style uint32, id int) uintptr
 	}
 	return r
 }
+func addPanelControl(mode int, class, title string, x, y, w, h int, style uint32, id int) uintptr {
+	p := makeChild(class, title, x, y, w, h, style, id)
+	if mode == 0 { zipControls = append(zipControls, p) } else { pdfControls = append(pdfControls, p) }
+	return p
+}
+func setMode(mode int) {
+	uiMode = mode
+	for _, h := range zipControls {
+		if mode == 0 { pShowWindow.Call(h, SW_SHOW) } else { pShowWindow.Call(h, SW_HIDE) }
+	}
+	for _, h := range pdfControls {
+		if mode == 1 { pShowWindow.Call(h, SW_SHOW) } else { pShowWindow.Call(h, SW_HIDE) }
+	}
+	if mode == 0 {
+		pSetWindowText.Call(hwndTabZip, uintptr(unsafe.Pointer(str("● 公文 ZIP｜自動合併"))))
+		pSetWindowText.Call(hwndTabPDF, uintptr(unsafe.Pointer(str("一般 PDF｜手動排序"))))
+		if !isMerging { status("待命：拖入公文 ZIP，即自動存回 ZIP 同一資料夾。") }
+	} else {
+		pSetWindowText.Call(hwndTabZip, uintptr(unsafe.Pointer(str("公文 ZIP｜自動合併"))))
+		pSetWindowText.Call(hwndTabPDF, uintptr(unsafe.Pointer(str("● 一般 PDF｜手動排序"))))
+		if !isMerging { refresh(selected()) }
+	}
+}
 func initUI() {
 	fontHeight := int32(-18)
 	fontHandle, _, _ = pCreateFont.Call(uintptr(fontHeight), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(str("Microsoft JhengHei UI"))))
-	makeChild("STATIC", "一般 PDF 可拖曳排序；公文 ZIP 可一鍵排除意見單、合併版與稿件。", 18, 15, 730, 25, 0, 0)
-	hwndList = makeChild("LISTBOX", "", 18, 50, 535, 386, WS_BORDER|WS_VSCROLL|WS_TABSTOP|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT, ID_LIST)
+	hwndTabZip = makeChild("BUTTON", "● 公文 ZIP｜自動合併", 22, 18, 342, 45, WS_TABSTOP, ID_TAB_ZIP)
+	hwndTabPDF = makeChild("BUTTON", "一般 PDF｜手動排序", 374, 18, 361, 45, WS_TABSTOP, ID_TAB_PDF)
+
+	addPanelControl(0, "STATIC", "公文 ZIP：拖入視窗，即開始自動合併", 35, 113, 675, 33, 0, 0)
+	addPanelControl(0, "STATIC", "處理方式：只取來文主文及 ATTCH1、ATTCH2……，依序合併。", 35, 166, 688, 32, 0, 0)
+	addPanelControl(0, "STATIC", "自動排除 opinion、合併版及稿件；原 ZIP 不變動。", 35, 204, 690, 32, 0, 0)
+	addPanelControl(0, "STATIC", "輸出位置：ZIP 所在資料夾。名稱重複時自動編號，不覆寫。", 35, 242, 698, 32, 0, 0)
+	hwndDetail = addPanelControl(0, "BUTTON", "以完整日期、文號命名（未勾選為「機關公文」）", 35, 308, 665, 35, WS_TABSTOP|0x00000003, ID_FULL_NAME)
+	hwndZip = addPanelControl(0, "BUTTON", "選擇 ZIP…（也可直接拖入）", 35, 386, 665, 52, WS_TABSTOP, ID_ADD_ZIP)
+	addPanelControl(0, "STATIC", "辨識不完整時，以「ZIP 檔名_來文資料待確認.pdf」輸出，避免猜測。", 35, 466, 695, 40, 0, 0)
+
+	addPanelControl(1, "STATIC", "PDF 依下方清單排序。拖曳項目或按上移／下移調整。", 22, 78, 718, 29, 0, 0)
+	hwndList = addPanelControl(1, "LISTBOX", "", 22, 110, 535, 325, WS_BORDER|WS_VSCROLL|WS_TABSTOP|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT, ID_LIST)
 	oldListProc, _, _ = pSetWindowLongPtr.Call(hwndList, GWLP_WNDPROC, listProc)
-	makeChild("BUTTON", "加入 PDF…", 573, 51, 167, 39, WS_TABSTOP, ID_ADD)
-	makeChild("BUTTON", "依桌面直排排序", 573, 100, 167, 35, WS_TABSTOP, ID_SORT_COL)
-	makeChild("BUTTON", "依桌面橫排排序", 573, 142, 167, 35, WS_TABSTOP, ID_SORT_ROW)
-	makeChild("BUTTON", "↑ 上移", 573, 193, 167, 35, WS_TABSTOP, ID_UP)
-	makeChild("BUTTON", "↓ 下移", 573, 233, 167, 35, WS_TABSTOP, ID_DOWN)
-	makeChild("BUTTON", "移除選取", 573, 284, 167, 35, WS_TABSTOP, ID_REMOVE)
-	makeChild("BUTTON", "清空清單", 573, 325, 167, 35, WS_TABSTOP, ID_CLEAR)
-	hwndZip = makeChild("BUTTON", "公文 ZIP 一鍵合併…", 573, 379, 167, 48, WS_TABSTOP, ID_ADD_ZIP)
-	hwndDetail = makeChild("BUTTON", "使用完整日期文號", 573, 437, 167, 25, WS_TABSTOP|0x00000003, ID_FULL_NAME)
-	hwndMerge = makeChild("BUTTON", "一般 PDF 合併", 573, 477, 167, 50, WS_TABSTOP, ID_MERGE)
-	makeChild("STATIC", "可將公文 ZIP 直接拖入視窗；合併前顯示檔案順序與預設檔名。", 18, 453, 535, 50, 0, 0)
-	hwndStatus = makeChild("STATIC", "尚未加入 PDF", 18, 548, 735, 44, 0, ID_STATUS)
+	addPanelControl(1, "BUTTON", "加入 PDF…", 575, 110, 159, 40, WS_TABSTOP, ID_ADD)
+	addPanelControl(1, "BUTTON", "↑ 上移", 575, 160, 159, 35, WS_TABSTOP, ID_UP)
+	addPanelControl(1, "BUTTON", "↓ 下移", 575, 202, 159, 35, WS_TABSTOP, ID_DOWN)
+	addPanelControl(1, "BUTTON", "移除選取", 575, 251, 159, 35, WS_TABSTOP, ID_REMOVE)
+	addPanelControl(1, "BUTTON", "清空清單", 575, 293, 159, 35, WS_TABSTOP, ID_CLEAR)
+	addPanelControl(1, "BUTTON", "桌面直排", 575, 344, 159, 35, WS_TABSTOP, ID_SORT_COL)
+	addPanelControl(1, "BUTTON", "桌面橫排", 575, 387, 159, 35, WS_TABSTOP, ID_SORT_ROW)
+	hwndMerge = addPanelControl(1, "BUTTON", "合併 PDF…", 22, 462, 712, 55, WS_TABSTOP, ID_MERGE)
+	hwndStatus = makeChild("STATIC", "", 22, 551, 713, 49, 0, ID_STATUS)
 	pDragAcceptFiles.Call(hwndMain, 1)
 	pDragAcceptFiles.Call(hwndList, 1)
+	setMode(0)
 }
+
 func refresh(selectIndex int) {
 	send(hwndList, LB_RESETCONTENT, 0, 0)
 	for i, file := range winFiles {
@@ -327,11 +376,7 @@ func appendFiles(files []string) {
 		status("沒有新增 PDF：請拖入 PDF 檔案（重複項目會略過）。")
 		return
 	}
-	if reorderDesktop(false) {
-		status(fmt.Sprintf("已加入 %d 份 PDF，並依桌面圖示直排順序排列。", count))
-	} else {
-		status(fmt.Sprintf("已加入 %d 份 PDF。部分檔案非桌面項目，請確認清單順序。", count))
-	}
+	status(fmt.Sprintf("已加入 %d 份 PDF。未自動掃描桌面圖示；請確認清單順序。", count))
 }
 func dropFiles(hdrop uintptr) {
 	count, _, _ := pDragQueryFile.Call(hdrop, ^uintptr(0), 0, 0)
@@ -431,56 +476,55 @@ func remoteMessage(h uintptr, id uint32, w, l uintptr) bool {
 	result, _, _ := pSendMessageTimeout.Call(h, uintptr(id), w, l, SMTO_ABORTIFHUNG, 300, uintptr(unsafe.Pointer(&ret)))
 	return result != 0
 }
-func reorderDesktop(horizontal bool) bool {
-	if len(winFiles) < 2 {
-		return false
-	}
+// Desktop positions may require cross-process Explorer calls; they MUST never
+// run on the Win32 UI thread. Edits made while sorting invalidate the result.
+func desktopSortedFiles(files []string, horizontal bool) ([]string, bool) {
+	if len(files) < 2 { return nil, false }
 	dir := desktopFolder()
-	if dir == "" {
-		return false
-	}
+	if dir == "" { return nil, false }
 	positions := desktopIcons()
-	if len(positions) == 0 {
-		return false
-	}
-	p := make([]iconPos, len(winFiles))
-	for i, f := range winFiles {
-		if !strings.EqualFold(filepath.Clean(filepath.Dir(f)), filepath.Clean(dir)) {
-			return false
-		}
+	if len(positions) == 0 { return nil, false }
+	p := make([]iconPos, len(files))
+	for i, f := range files {
+		if !strings.EqualFold(filepath.Clean(filepath.Dir(f)), filepath.Clean(dir)) { return nil, false }
 		name := strings.ToLower(filepath.Base(f))
 		v, ok := positions[name]
-		if !ok {
-			v, ok = positions[strings.TrimSuffix(name, filepath.Ext(name))]
-		}
-		if !ok {
-			return false
-		}
+		if !ok { v, ok = positions[strings.TrimSuffix(name, filepath.Ext(name))] }
+		if !ok { return nil, false }
 		p[i] = v
 	}
-	ids := make([]int, len(winFiles))
-	for i := range ids {
-		ids[i] = i
-	}
+	ids := make([]int, len(files))
+	for i := range ids { ids[i] = i }
 	sort.SliceStable(ids, func(i, j int) bool {
 		a, b := p[ids[i]], p[ids[j]]
 		if horizontal {
-			if a.y/52 != b.y/52 {
-				return a.y < b.y
-			}
+			if a.y/52 != b.y/52 { return a.y < b.y }
 			return a.x < b.x
 		}
-		if a.x/52 != b.x/52 {
-			return a.x < b.x
-		}
+		if a.x/52 != b.x/52 { return a.x < b.x }
 		return a.y < b.y
 	})
-	old := append([]string(nil), winFiles...)
-	for i, id := range ids {
-		winFiles[i] = old[id]
-	}
-	refresh(0)
-	return true
+	out := make([]string, len(ids))
+	for i, id := range ids { out[i] = files[id] }
+	return out, true
+}
+func startDesktopSort(horizontal bool) {
+	if isSorting { return }
+	if len(winFiles) < 2 { status("請先加入至少 2 份 PDF。"); return }
+	original := append([]string(nil), winFiles...)
+	isSorting = true
+	status("背景讀取桌面圖示排列位置中，視窗仍可操作…")
+	go func() {
+		result := desktopResult{original: original, horizontal: horizontal}
+		defer func() {
+			if recover() != nil { result.ok = false }
+			resultMu.Lock()
+			latestDesktop = result
+			resultMu.Unlock()
+			pPostMessage.Call(hwndMain, WM_APP+2, 0, 0)
+		}()
+		result.files, result.ok = desktopSortedFiles(original, horizontal)
+	}()
 }
 
 // ZIP exports use a separate workflow rather than adding opinion sheets to the manual list.
@@ -496,6 +540,7 @@ func handleInputFiles(files []string) {
 		}
 	}
 	if len(zips) > 0 {
+		setMode(0)
 		if len(zips) != 1 || len(pdfs) > 0 {
 			alert("請一次拖入一份公文 ZIP；一般 PDF 請另外拖入。", true)
 			return
@@ -503,7 +548,7 @@ func handleInputFiles(files []string) {
 		startOfficialZIP(zips[0])
 		return
 	}
-	appendFiles(pdfs)
+	if len(pdfs) > 0 { setMode(1); appendFiles(pdfs) }
 }
 func zipFilter() []uint16 {
 	return []uint16{'Z', 'I', 'P', ' ', '(', '*', '.', 'z', 'i', 'p', ')', 0, '*', '.', 'z', 'i', 'p', 0, 0}
@@ -555,48 +600,57 @@ func chooseNamedOutput(folder, name string) string {
 	}
 	return out
 }
+// ZIP mode is intentionally zero-dialog: analysis, naming, extraction and PDF
+// merging all run off the GUI thread. The resulting PDF stays beside its ZIP.
+func autoOutputPath(zipPath, name string) (string, error) {
+	folder := filepath.Dir(zipPath)
+	if cleanComponent(name) == "" || strings.ContainsAny(name, "\\/:*?\"<>|") {
+		return "", fmt.Errorf("不安全的輸出檔名")
+	}
+	stem := strings.TrimSuffix(name, filepath.Ext(name))
+	for i := 1; i <= 10000; i++ {
+		candidate := name
+		if i > 1 { candidate = fmt.Sprintf("%s (%d).pdf", stem, i) }
+		out := filepath.Join(folder, candidate)
+		_, err := os.Stat(out)
+		if os.IsNotExist(err) { return out, nil }
+		if err != nil { return "", err }
+	}
+	return "", fmt.Errorf("輸出檔名編號已達上限")
+}
 func startOfficialZIP(path string) {
-	if isMerging {
-		return
-	}
-	job, err := analyzeZIP(path)
-	if err != nil {
-		alert("公文 ZIP 分析失敗：\n"+err.Error(), true)
-		return
-	}
+	if isMerging { return }
+	setMode(0)
 	detailed := send(hwndDetail, BM_GETCHECK, 0, 0) != 0
-	name, err := job.outputName(detailed)
-	note := ""
-	if err != nil {
-		note = "\n注意：" + err.Error() + "。儲存時請自行輸入正確名稱。"
-		name = "請手動確認來文機關與文號.pdf"
-	}
-	var b strings.Builder
-	b.WriteString("以下文件將依序合併：\n\n")
-	for i, e := range job.Entries {
-		fmt.Fprintf(&b, "%d. %s\n", i+1, e.name)
-	}
-	fmt.Fprintf(&b, "\n預設檔名：\n%s%s\n\n是否繼續？", name, note)
-	ret, _, _ := pMessageBox.Call(hwndMain, uintptr(unsafe.Pointer(str(b.String()))), uintptr(unsafe.Pointer(str("確認公文 ZIP 合併"))), MB_YESNO|MB_ICONINFORMATION)
-	if ret != IDYES {
-		return
-	}
-	out := chooseNamedOutput(filepath.Dir(path), name)
-	if out == "" {
-		return
-	}
 	isMerging = true
-	pEnableWindow.Call(hwndMerge, 0)
 	pEnableWindow.Call(hwndZip, 0)
-	status("正在解壓及合併來文與附件…")
+	pEnableWindow.Call(hwndMerge, 0)
+	status("正在處理：" + filepath.Base(path))
 	go func() {
-		n, e := mergeOfficialZIP(job, out)
-		resultMu.Lock()
-		latestResult = mergeResult{path: out, count: n, err: e}
-		resultMu.Unlock()
-		pPostMessage.Call(hwndMain, WM_APP+1, 0, 0)
+		var result mergeResult
+		defer func() {
+			if v := recover(); v != nil { result.err = fmt.Errorf("公文 ZIP 處理異常：%v", v) }
+			resultMu.Lock()
+			latestResult = result
+			resultMu.Unlock()
+			pPostMessage.Call(hwndMain, WM_APP+1, 0, 0)
+		}()
+		job, err := analyzeZIP(path)
+		if err != nil { result.err = err; return }
+		name, nameErr := job.outputName(detailed)
+		if nameErr != nil {
+			fallback := cleanComponent(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
+			if fallback == "" { fallback = "來文" }
+			name = fallback + "_來文資料待確認.pdf"
+		}
+		out, err := autoOutputPath(path, name)
+		if err != nil { result.err = err; return }
+		result.path = out
+		result.count, result.err = mergeOfficialZIP(job, out)
+		if result.err == nil && nameErr != nil { result.err = fmt.Errorf("已合併成功，惟無法辨識完整檔名；請核對 %s（%v）", filepath.Base(out), nameErr) }
 	}()
 }
+
 func chooseFiles() {
 	data := make([]uint16, 32768)
 	filter := fileFilter()
@@ -705,17 +759,9 @@ func handleCommand(id int) {
 	case ID_ADD:
 		chooseFiles()
 	case ID_SORT_COL:
-		if reorderDesktop(false) {
-			status("已依桌面直排（上→下，左→右）順序排列。")
-		} else {
-			alert("部分檔案不在目前桌面，或無法讀取桌面圖示位置。\n請直接在清單拖曳，或使用上移、下移調整。", true)
-		}
+		startDesktopSort(false)
 	case ID_SORT_ROW:
-		if reorderDesktop(true) {
-			status("已依桌面橫排（左→右，上→下）順序排列。")
-		} else {
-			alert("部分檔案不在目前桌面，或無法讀取桌面圖示位置。\n請直接在清單拖曳，或使用上移、下移調整。", true)
-		}
+		startDesktopSort(true)
 	case ID_UP:
 		i := selected()
 		moveItem(i, i-1)
@@ -731,6 +777,10 @@ func handleCommand(id int) {
 		startMerge()
 	case ID_ADD_ZIP:
 		chooseZIP()
+	case ID_TAB_ZIP:
+		setMode(0)
+	case ID_TAB_PDF:
+		setMode(1)
 	}
 }
 func listIndexFromPoint(l uintptr) int {
@@ -794,7 +844,7 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		return 0
 	case WM_COMMAND:
 		id := int(w & 0xFFFF)
-		if id >= ID_ADD && id <= ID_ADD_ZIP {
+		if (id >= ID_ADD && id <= ID_ADD_ZIP) || id == ID_TAB_ZIP || id == ID_TAB_PDF {
 			handleCommand(id)
 			return 0
 		}
@@ -804,6 +854,20 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		} else {
 			pDragFinish.Call(w)
 		}
+		return 0
+	case WM_APP + 2:
+		resultMu.Lock()
+		r := latestDesktop
+		resultMu.Unlock()
+		isSorting = false
+		if !r.ok { status("無法取得完整桌面排序，可在清單中拖曳或使用上移／下移。"); return 0 }
+		if len(r.original) != len(winFiles) { status("清單已變更，請重新排序。"); return 0 }
+		for i := range r.original {
+			if r.original[i] != winFiles[i] { status("清單已變更，請重新排序。"); return 0 }
+		}
+		winFiles = r.files
+		refresh(0)
+		if r.horizontal { status("已依桌面橫排排序。") } else { status("已依桌面直排排序。") }
 		return 0
 	case WM_APP + 1:
 		resultMu.Lock()
@@ -816,8 +880,7 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 			status("合併失敗：" + result.err.Error())
 			alert("合併失敗：\n"+result.err.Error(), true)
 		} else {
-			status(fmt.Sprintf("合併完成：%d 頁。%s", result.count, result.path))
-			alert(fmt.Sprintf("合併完成，共 %d 頁！\n\n%s", result.count, result.path), false)
+			status(fmt.Sprintf("已完成 %d 頁：%s", result.count, result.path))
 		}
 		return 0
 	case WM_DESTROY:
