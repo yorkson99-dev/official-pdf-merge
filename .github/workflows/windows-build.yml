@@ -44,6 +44,9 @@ jobs:
           $env:CGO_ENABLED='0'
           go build -trimpath -ldflags='-H=windowsgui -s -w' -o '公文PDF快合.exe' .
           if ($LASTEXITCODE -ne 0) { throw 'Go build failed' }
+      - name: GUI startup smoke test (real Windows desktop)
+        shell: pwsh
+        run: ./ci-startup-smoke.ps1
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
