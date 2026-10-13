@@ -3,11 +3,9 @@
 package main
 
 import (
-	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -34,25 +32,12 @@ var (
 	pMessageBox               = u32.NewProc("MessageBoxW")
 	pSetWindowText            = u32.NewProc("SetWindowTextW")
 	pEnableWindow             = u32.NewProc("EnableWindow")
-	pShowWindow               = u32.NewProc("ShowWindow")
 	pDestroyWindow            = u32.NewProc("DestroyWindow")
 	pPostQuitMessage          = u32.NewProc("PostQuitMessage")
 	pSetWindowLongPtr         = u32.NewProc("SetWindowLongPtrW")
 	pCallWindowProc           = u32.NewProc("CallWindowProcW")
-	pFindWindow               = u32.NewProc("FindWindowW")
-	pFindWindowEx             = u32.NewProc("FindWindowExW")
-	pEnumWindows              = u32.NewProc("EnumWindows")
-	pGetWindowThreadProcessID = u32.NewProc("GetWindowThreadProcessId")
-	pSendMessageTimeout       = u32.NewProc("SendMessageTimeoutW")
 	pGetSystemMetrics         = u32.NewProc("GetSystemMetrics")
 	pGetModuleHandle          = k32.NewProc("GetModuleHandleW")
-	pOpenProcess              = k32.NewProc("OpenProcess")
-	pCloseHandle              = k32.NewProc("CloseHandle")
-	pVirtualAllocEx           = k32.NewProc("VirtualAllocEx")
-	pVirtualFreeEx            = k32.NewProc("VirtualFreeEx")
-	pWriteProcessMemory       = k32.NewProc("WriteProcessMemory")
-	pReadProcessMemory        = k32.NewProc("ReadProcessMemory")
-	pSHGetFolderPath          = s32.NewProc("SHGetFolderPathW")
 	pDragAcceptFiles          = s32.NewProc("DragAcceptFiles")
 	pDragQueryFile            = s32.NewProc("DragQueryFileW")
 	pDragFinish               = s32.NewProc("DragFinish")
@@ -86,19 +71,12 @@ const (
 	WM_LBUTTONUP         = 0x0202
 	WM_KEYDOWN           = 0x0100
 	WM_APP               = 0x8000
-	SW_HIDE              = 0
-	SW_SHOW              = 5
 	BN_CLICKED           = 0
 	LB_ADDSTRING         = 0x0180
 	LB_RESETCONTENT      = 0x0184
 	LB_SETCURSEL         = 0x0186
 	LB_GETCURSEL         = 0x0188
 	LB_ITEMFROMPOINT     = 0x01A9
-	LVM_FIRST            = 0x1000
-	LVM_GETITEMCOUNT     = LVM_FIRST + 4
-	LVM_GETITEMPOSITION  = LVM_FIRST + 16
-	LVM_GETITEMTEXTW     = LVM_FIRST + 115
-	SMTO_ABORTIFHUNG     = 0x2
 	MB_OK                = 0x0
 	MB_ICONERROR         = 0x10
 	MB_ICONINFORMATION   = 0x40
@@ -111,20 +89,11 @@ const (
 	OFN_PATHMUSTEXIST    = 0x00000800
 	OFN_NOCHANGEDIR      = 0x00000008
 	GWLP_WNDPROC         = ^uintptr(3)
-	PROCESS_VM_OPERATION = 0x0008
-	PROCESS_VM_READ      = 0x0010
-	PROCESS_VM_WRITE     = 0x0020
-	MEM_COMMIT           = 0x1000
-	MEM_RESERVE          = 0x2000
-	MEM_RELEASE          = 0x8000
-	PAGE_READWRITE       = 0x04
 	VK_DELETE            = 0x2E
 	VK_CONTROL           = 0x11
 	VK_UP                = 0x26
 	VK_DOWN              = 0x28
 	ID_ADD               = 101
-	ID_SORT_COL          = 102
-	ID_SORT_ROW          = 103
 	ID_UP                = 104
 	ID_DOWN              = 105
 	ID_REMOVE            = 106
@@ -132,8 +101,6 @@ const (
 	ID_MERGE             = 108
 	ID_ADD_ZIP           = 109
 	ID_FULL_NAME         = 110
-	ID_TAB_ZIP           = 111
-	ID_TAB_PDF           = 112
 	ID_LIST              = 201
 	ID_STATUS            = 202
 )
@@ -189,28 +156,14 @@ type openFileName struct {
 	dwReserved        uint32
 	flagsEx           uint32
 }
-type iconPos struct{ x, y int32 }
 type mergeResult struct {
 	path  string
 	count int
 	err   error
 	warning string
 }
-type desktopResult struct {
-	files []string
-	original []string
-	ok bool
-	horizontal bool
-}
-
 var (
 	hwndMain, hwndList, hwndStatus, hwndMerge, hwndZip, hwndDetail uintptr
-	hwndTabZip, hwndTabPDF uintptr
-	zipControls, pdfControls []uintptr
-	uiMode int
-	modeInitialized bool
-	isSorting bool
-	latestDesktop desktopResult
 	oldListProc                                                    uintptr
 	winFiles                                                       []string
 	dragFrom                                                       = -1
@@ -220,8 +173,6 @@ var (
 	fontHandle                                                     uintptr
 	windowProc                                                     = syscall.NewCallback(wndProc)
 	listProc                                                       = syscall.NewCallback(listWndProc)
-	enumProc                                                       = syscall.NewCallback(enumWindowForDesktop)
-	desktopList                                                    uintptr
 )
 
 // Startup diagnostics are disabled by default; no document names or content are logged.
@@ -257,59 +208,26 @@ func makeChild(class, text string, x, y, w, h int, style uint32, id int) uintptr
 	}
 	return r
 }
-func addPanelControl(mode int, class, title string, x, y, w, h int, style uint32, id int) uintptr {
-	p := makeChild(class, title, x, y, w, h, style, id)
-	if mode == 0 { zipControls = append(zipControls, p) } else { pdfControls = append(pdfControls, p) }
-	return p
-}
-func setMode(mode int) {
-	if modeInitialized && uiMode == mode { return }
-	traceStartup("setMode begin")
-	uiMode = mode
-	modeInitialized = true
-	traceStartup("setMode zip controls")
-	for _, h := range zipControls {
-		if mode == 0 { pShowWindow.Call(h, SW_SHOW) } else { pShowWindow.Call(h, SW_HIDE) }
-	}
-	traceStartup("setMode pdf controls")
-	for _, h := range pdfControls {
-		if mode == 1 { pShowWindow.Call(h, SW_SHOW) } else { pShowWindow.Call(h, SW_HIDE) }
-	}
-	traceStartup("setMode panel ready")
-	if !isMerging {
-		if mode == 0 { status("待命：拖入公文 ZIP，即自動存回 ZIP 同一資料夾。") } else { refresh(selected()) }
-	}
-	traceStartup("setMode done")
-}
+
+
 func initUI() {
-	fontHeight := int32(-18)
-	fontHandle, _, _ = pCreateFont.Call(uintptr(fontHeight), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(str("Microsoft JhengHei UI"))))
-	hwndTabZip = makeChild("BUTTON", "● 公文 ZIP｜自動合併", 22, 18, 342, 45, WS_TABSTOP, ID_TAB_ZIP)
-	hwndTabPDF = makeChild("BUTTON", "一般 PDF｜手動排序", 374, 18, 361, 45, WS_TABSTOP, ID_TAB_PDF)
-
-	addPanelControl(0, "STATIC", "公文 ZIP：拖入視窗，即開始自動合併", 35, 113, 675, 33, 0, 0)
-	addPanelControl(0, "STATIC", "處理方式：只取來文主文及 ATTCH1、ATTCH2……，依序合併。", 35, 166, 688, 32, 0, 0)
-	addPanelControl(0, "STATIC", "自動排除 opinion、合併版及稿件；原 ZIP 不變動。", 35, 204, 690, 32, 0, 0)
-	addPanelControl(0, "STATIC", "輸出位置：ZIP 所在資料夾。名稱重複時自動編號，不覆寫。", 35, 242, 698, 32, 0, 0)
-	hwndDetail = addPanelControl(0, "BUTTON", "以完整日期、文號命名（未勾選為「機關公文」）", 35, 308, 665, 35, WS_TABSTOP|0x00000003, ID_FULL_NAME)
-	hwndZip = addPanelControl(0, "BUTTON", "選擇 ZIP…（也可直接拖入）", 35, 386, 665, 52, WS_TABSTOP, ID_ADD_ZIP)
-	addPanelControl(0, "STATIC", "辨識不完整時，以「ZIP 檔名_來文資料待確認.pdf」輸出，避免猜測。", 35, 466, 695, 40, 0, 0)
-
-	addPanelControl(1, "STATIC", "PDF 依下方清單排序。拖曳項目或按上移／下移調整。", 22, 78, 718, 29, 0, 0)
-	hwndList = addPanelControl(1, "LISTBOX", "", 22, 110, 535, 325, WS_BORDER|WS_VSCROLL|WS_TABSTOP|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT, ID_LIST)
+	fontHandle, _, _ = pCreateFont.Call(uintptr(int32(-18)), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(str("Microsoft JhengHei UI"))))
+	makeChild("STATIC", "公文 ZIP｜拖入即合併", 22, 17, 550, 31, 0, 0)
+	makeChild("STATIC", "自動整理來文及 ATTCH 附件，結果存回 ZIP 相同資料夾。", 22, 52, 608, 25, 0, 0)
+	hwndZip = makeChild("BUTTON", "選擇公文 ZIP…", 22, 91, 600, 51, WS_TABSTOP, ID_ADD_ZIP)
+	hwndDetail = makeChild("BUTTON", "以完整日期、文號命名", 22, 153, 600, 31, WS_TABSTOP|0x00000003, ID_FULL_NAME)
+	makeChild("STATIC", "一般 PDF｜手動排序（不讀取桌面圖示）", 22, 211, 595, 27, 0, 0)
+	hwndList = makeChild("LISTBOX", "", 22, 241, 446, 184, WS_BORDER|WS_VSCROLL|WS_TABSTOP|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT, ID_LIST)
 	oldListProc, _, _ = pSetWindowLongPtr.Call(hwndList, GWLP_WNDPROC, listProc)
-	addPanelControl(1, "BUTTON", "加入 PDF…", 575, 110, 159, 40, WS_TABSTOP, ID_ADD)
-	addPanelControl(1, "BUTTON", "↑ 上移", 575, 160, 159, 35, WS_TABSTOP, ID_UP)
-	addPanelControl(1, "BUTTON", "↓ 下移", 575, 202, 159, 35, WS_TABSTOP, ID_DOWN)
-	addPanelControl(1, "BUTTON", "移除選取", 575, 251, 159, 35, WS_TABSTOP, ID_REMOVE)
-	addPanelControl(1, "BUTTON", "清空清單", 575, 293, 159, 35, WS_TABSTOP, ID_CLEAR)
-	addPanelControl(1, "BUTTON", "桌面直排", 575, 344, 159, 35, WS_TABSTOP, ID_SORT_COL)
-	addPanelControl(1, "BUTTON", "桌面橫排", 575, 387, 159, 35, WS_TABSTOP, ID_SORT_ROW)
-	hwndMerge = addPanelControl(1, "BUTTON", "合併 PDF…", 22, 462, 712, 55, WS_TABSTOP, ID_MERGE)
-	hwndStatus = makeChild("STATIC", "", 22, 551, 713, 49, 0, ID_STATUS)
+	makeChild("BUTTON", "加入 PDF…", 480, 241, 142, 34, WS_TABSTOP, ID_ADD)
+	makeChild("BUTTON", "↑ 上移", 480, 281, 142, 31, WS_TABSTOP, ID_UP)
+	makeChild("BUTTON", "↓ 下移", 480, 318, 142, 31, WS_TABSTOP, ID_DOWN)
+	makeChild("BUTTON", "移除", 480, 355, 142, 31, WS_TABSTOP, ID_REMOVE)
+	makeChild("BUTTON", "清空", 480, 392, 142, 31, WS_TABSTOP, ID_CLEAR)
+	hwndMerge = makeChild("BUTTON", "合併一般 PDF…", 22, 441, 600, 41, WS_TABSTOP, ID_MERGE)
+	hwndStatus = makeChild("STATIC", "待命：將公文 ZIP 拖入視窗，即自動輸出。", 22, 499, 610, 45, 0, ID_STATUS)
 	pDragAcceptFiles.Call(hwndMain, 1)
 	pDragAcceptFiles.Call(hwndList, 1)
-	setMode(0)
 }
 
 func refresh(selectIndex int) {
@@ -379,7 +297,7 @@ func appendFiles(files []string) {
 		status("沒有新增 PDF：請拖入 PDF 檔案（重複項目會略過）。")
 		return
 	}
-	status(fmt.Sprintf("已加入 %d 份 PDF。未自動掃描桌面圖示；請確認清單順序。", count))
+	status(fmt.Sprintf("已加入 %d 份 PDF。請在清單中調整合併順序。", count))
 }
 func dropFiles(hdrop uintptr) {
 	count, _, _ := pDragQueryFile.Call(hdrop, ^uintptr(0), 0, 0)
@@ -396,140 +314,6 @@ func dropFiles(hdrop uintptr) {
 	pDragFinish.Call(hdrop)
 	handleInputFiles(names)
 }
-func desktopFolder() string {
-	var buf [32768]uint16
-	result, _, _ := pSHGetFolderPath.Call(0, 0x10, 0, 0, uintptr(unsafe.Pointer(&buf[0])))
-	if int32(result) != 0 {
-		return ""
-	}
-	return syscall.UTF16ToString(buf[:])
-}
-func enumWindowForDesktop(h uintptr, l uintptr) uintptr {
-	def, _, _ := pFindWindowEx.Call(h, 0, uintptr(unsafe.Pointer(str("SHELLDLL_DefView"))), 0)
-	if def != 0 {
-		list, _, _ := pFindWindowEx.Call(def, 0, uintptr(unsafe.Pointer(str("SysListView32"))), 0)
-		if list != 0 {
-			desktopList = list
-			return 0
-		}
-	}
-	return 1
-}
-func desktopIcons() map[string]iconPos {
-	desktopList = 0
-	pEnumWindows.Call(enumProc, 0)
-	if desktopList == 0 {
-		return nil
-	}
-	var pid uint32
-	pGetWindowThreadProcessID.Call(desktopList, uintptr(unsafe.Pointer(&pid)))
-	if pid == 0 {
-		return nil
-	}
-	proc, _, _ := pOpenProcess.Call(PROCESS_VM_OPERATION|PROCESS_VM_READ|PROCESS_VM_WRITE, 0, uintptr(pid))
-	if proc == 0 {
-		return nil
-	}
-	defer pCloseHandle.Call(proc)
-	remote, _, _ := pVirtualAllocEx.Call(proc, 0, 4096, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)
-	if remote == 0 {
-		return nil
-	}
-	defer pVirtualFreeEx.Call(proc, remote, 0, MEM_RELEASE)
-	count := int(send(desktopList, LVM_GETITEMCOUNT, 0, 0))
-	if count < 1 || count > 20000 {
-		return nil
-	}
-	result := make(map[string]iconPos, count)
-	for i := 0; i < count; i++ {
-		var posBytes [8]byte
-		if !remoteMessage(desktopList, LVM_GETITEMPOSITION, uintptr(i), remote) {
-			continue
-		}
-		var readBytes uintptr
-		r, _, _ := pReadProcessMemory.Call(proc, remote, uintptr(unsafe.Pointer(&posBytes[0])), 8, uintptr(unsafe.Pointer(&readBytes)))
-		if r == 0 || readBytes != 8 {
-			continue
-		}
-		pos := iconPos{int32(binary.LittleEndian.Uint32(posBytes[:4])), int32(binary.LittleEndian.Uint32(posBytes[4:8]))}
-		// 64-bit LVITEMW: pszText at offset 24, cchTextMax at 32.
-		var item [96]byte
-		binary.LittleEndian.PutUint32(item[0:4], 1) // LVIF_TEXT
-		binary.LittleEndian.PutUint32(item[4:8], uint32(i))
-		binary.LittleEndian.PutUint64(item[24:32], uint64(remote+256))
-		binary.LittleEndian.PutUint32(item[32:36], 500)
-		r, _, _ = pWriteProcessMemory.Call(proc, remote, uintptr(unsafe.Pointer(&item[0])), uintptr(len(item)), 0)
-		if r == 0 || !remoteMessage(desktopList, LVM_GETITEMTEXTW, uintptr(i), remote) {
-			continue
-		}
-		buf := make([]uint16, 500)
-		r, _, _ = pReadProcessMemory.Call(proc, remote+256, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)*2), 0)
-		if r == 0 {
-			continue
-		}
-		label := strings.ToLower(strings.TrimSpace(syscall.UTF16ToString(buf)))
-		if label != "" {
-			result[label] = pos
-		}
-	}
-	return result
-}
-func remoteMessage(h uintptr, id uint32, w, l uintptr) bool {
-	var ret uintptr
-	result, _, _ := pSendMessageTimeout.Call(h, uintptr(id), w, l, SMTO_ABORTIFHUNG, 300, uintptr(unsafe.Pointer(&ret)))
-	return result != 0
-}
-// Desktop positions may require cross-process Explorer calls; they MUST never
-// run on the Win32 UI thread. Edits made while sorting invalidate the result.
-func desktopSortedFiles(files []string, horizontal bool) ([]string, bool) {
-	if len(files) < 2 { return nil, false }
-	dir := desktopFolder()
-	if dir == "" { return nil, false }
-	positions := desktopIcons()
-	if len(positions) == 0 { return nil, false }
-	p := make([]iconPos, len(files))
-	for i, f := range files {
-		if !strings.EqualFold(filepath.Clean(filepath.Dir(f)), filepath.Clean(dir)) { return nil, false }
-		name := strings.ToLower(filepath.Base(f))
-		v, ok := positions[name]
-		if !ok { v, ok = positions[strings.TrimSuffix(name, filepath.Ext(name))] }
-		if !ok { return nil, false }
-		p[i] = v
-	}
-	ids := make([]int, len(files))
-	for i := range ids { ids[i] = i }
-	sort.SliceStable(ids, func(i, j int) bool {
-		a, b := p[ids[i]], p[ids[j]]
-		if horizontal {
-			if a.y/52 != b.y/52 { return a.y < b.y }
-			return a.x < b.x
-		}
-		if a.x/52 != b.x/52 { return a.x < b.x }
-		return a.y < b.y
-	})
-	out := make([]string, len(ids))
-	for i, id := range ids { out[i] = files[id] }
-	return out, true
-}
-func startDesktopSort(horizontal bool) {
-	if isSorting { return }
-	if len(winFiles) < 2 { status("請先加入至少 2 份 PDF。"); return }
-	original := append([]string(nil), winFiles...)
-	isSorting = true
-	status("背景讀取桌面圖示排列位置中，視窗仍可操作…")
-	go func() {
-		result := desktopResult{original: original, horizontal: horizontal}
-		defer func() {
-			if recover() != nil { result.ok = false }
-			resultMu.Lock()
-			latestDesktop = result
-			resultMu.Unlock()
-			pPostMessage.Call(hwndMain, WM_APP+2, 0, 0)
-		}()
-		result.files, result.ok = desktopSortedFiles(original, horizontal)
-	}()
-}
-
 // ZIP exports use a separate workflow rather than adding opinion sheets to the manual list.
 func handleInputFiles(files []string) {
 	traceStartup("handleInputFiles begin")
@@ -545,7 +329,6 @@ func handleInputFiles(files []string) {
 	}
 	if len(zips) > 0 {
 		traceStartup("handleInputFiles has ZIP")
-		setMode(0)
 		if len(zips) != 1 || len(pdfs) > 0 {
 			alert("請一次拖入一份公文 ZIP；一般 PDF 請另外拖入。", true)
 			return
@@ -553,7 +336,7 @@ func handleInputFiles(files []string) {
 		startOfficialZIP(zips[0])
 		return
 	}
-	if len(pdfs) > 0 { setMode(1); appendFiles(pdfs) }
+	if len(pdfs) > 0 { appendFiles(pdfs) }
 }
 func zipFilter() []uint16 {
 	return []uint16{'Z', 'I', 'P', ' ', '(', '*', '.', 'z', 'i', 'p', ')', 0, '*', '.', 'z', 'i', 'p', 0, 0}
@@ -568,42 +351,6 @@ func chooseZIP() {
 	if ret != 0 {
 		startOfficialZIP(syscall.UTF16ToString(buf))
 	}
-}
-func chooseNamedOutput(folder, name string) string {
-	if name == "" {
-		name = "請手動命名.pdf"
-	}
-	suggested := filepath.Join(folder, name)
-	if _, e := os.Stat(suggested); e == nil {
-		stem := strings.TrimSuffix(name, filepath.Ext(name))
-		for i := 2; i < 10000; i++ {
-			candidate := fmt.Sprintf("%s (%d).pdf", stem, i)
-			if _, e := os.Stat(filepath.Join(folder, candidate)); os.IsNotExist(e) {
-				name = candidate
-				break
-			}
-		}
-	}
-	buf := make([]uint16, 32768)
-	copy(buf, utf16.Encode([]rune(name)))
-	filter := fileFilter()
-	f := openFileName{lStructSize: uint32(unsafe.Sizeof(openFileName{})), hwndOwner: hwndMain,
-		lpstrFilter: &filter[0], lpstrFile: &buf[0], nMaxFile: uint32(len(buf)),
-		lpstrTitle: str("確認或修改公文合併檔名"), lpstrInitialDir: str(folder), lpstrDefExt: str("pdf"),
-		flags: OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR}
-	ok, _, _ := pGetSaveFileName.Call(uintptr(unsafe.Pointer(&f)))
-	if ok == 0 {
-		return ""
-	}
-	out := syscall.UTF16ToString(buf)
-	if !strings.EqualFold(filepath.Ext(out), ".pdf") {
-		out += ".pdf"
-	}
-	if _, e := os.Stat(out); e == nil {
-		alert("此檔案已存在，程式不會覆寫，請改用其他名稱。", true)
-		return ""
-	}
-	return out
 }
 // ZIP mode is intentionally zero-dialog: analysis, naming, extraction and PDF
 // merging all run off the GUI thread. The resulting PDF stays beside its ZIP.
@@ -625,7 +372,6 @@ func autoOutputPath(zipPath, name string) (string, error) {
 }
 func startOfficialZIP(path string) {
 	if isMerging { return }
-	setMode(0)
 	detailed := send(hwndDetail, BM_GETCHECK, 0, 0) != 0
 	traceStartup("ZIP job started")
 	isMerging = true
@@ -766,10 +512,6 @@ func handleCommand(id int) {
 	switch id {
 	case ID_ADD:
 		chooseFiles()
-	case ID_SORT_COL:
-		startDesktopSort(false)
-	case ID_SORT_ROW:
-		startDesktopSort(true)
 	case ID_UP:
 		i := selected()
 		moveItem(i, i-1)
@@ -785,10 +527,6 @@ func handleCommand(id int) {
 		startMerge()
 	case ID_ADD_ZIP:
 		chooseZIP()
-	case ID_TAB_ZIP:
-		setMode(0)
-	case ID_TAB_PDF:
-		setMode(1)
 	}
 }
 func listIndexFromPoint(l uintptr) int {
@@ -852,7 +590,7 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		return 0
 	case WM_COMMAND:
 		id := int(w & 0xFFFF)
-		if (id >= ID_ADD && id <= ID_ADD_ZIP) || id == ID_TAB_ZIP || id == ID_TAB_PDF {
+		if (id == ID_ADD || id == ID_UP || id == ID_DOWN || id == ID_REMOVE || id == ID_CLEAR || id == ID_MERGE || id == ID_ADD_ZIP) {
 			handleCommand(id)
 			return 0
 		}
@@ -865,20 +603,6 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		return 0
 	case WM_APP + 3:
 		if len(os.Args) > 1 { handleInputFiles(os.Args[1:]) }
-		return 0
-	case WM_APP + 2:
-		resultMu.Lock()
-		r := latestDesktop
-		resultMu.Unlock()
-		isSorting = false
-		if !r.ok { status("無法取得完整桌面排序，可在清單中拖曳或使用上移／下移。"); return 0 }
-		if len(r.original) != len(winFiles) { status("清單已變更，請重新排序。"); return 0 }
-		for i := range r.original {
-			if r.original[i] != winFiles[i] { status("清單已變更，請重新排序。"); return 0 }
-		}
-		winFiles = r.files
-		refresh(0)
-		if r.horizontal { status("已依桌面橫排排序。") } else { status("已依桌面直排排序。") }
 		return 0
 	case WM_APP + 1:
 		traceStartup("WM_APP+1 received")
@@ -919,8 +643,8 @@ func main() {
 	}
 	screenX, _, _ := pGetSystemMetrics.Call(0)
 	screenY, _, _ := pGetSystemMetrics.Call(1)
-	x := int((screenX - 770) / 2)
-	y := int((screenY - 650) / 2)
+	x := int((screenX - 660) / 2)
+	y := int((screenY - 610) / 2)
 	if x < 0 {
 		x = 0
 	}
@@ -928,7 +652,7 @@ func main() {
 		y = 0
 	}
 	traceStartup("CreateWindowExW begin")
-	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("快合 PDF｜極簡快速合併"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 770, 630, 0, 0, instance, 0)
+	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜極簡版"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 660, 578, 0, 0, instance, 0)
 	traceStartup(fmt.Sprintf("CreateWindowExW hwnd=%d error=%v", hwnd, windowErr))
 	if hwnd == 0 {
 		pMessageBox.Call(0, uintptr(unsafe.Pointer(str("無法建立程式視窗："+windowErr.Error()))), uintptr(unsafe.Pointer(str("公文 PDF 快合｜啟動失敗"))), MB_OK|MB_ICONERROR)
