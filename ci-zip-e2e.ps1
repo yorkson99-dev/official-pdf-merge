@@ -47,7 +47,7 @@ try {
     if ($statusHandle -eq [IntPtr]::Zero) { continue }
     $text = New-Object System.Text.StringBuilder 4096
     [void][Win32PDFSmoke]::GetWindowText($statusHandle, $text, $text.Capacity)
-    if (!(Test-Path $output) -or !($text.ToString().Contains('已完成'))) { continue }
+    if (!(Test-Path $output) -or !($text.ToString().Contains('完成'))) { continue }
     $size = (Get-Item $output).Length
     if ($size -lt 100) { throw "Output PDF is unexpectedly short: $size" }
     [UIntPtr]$res = [UIntPtr]::Zero
