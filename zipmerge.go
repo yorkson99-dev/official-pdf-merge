@@ -5,7 +5,6 @@ package main
 
 import (
 	"archive/zip"
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -180,99 +179,140 @@ func (j *officialJob) outputName(detailed bool) (string, error) {
 	}
 	return agency + suffix + ".pdf", nil
 }
-// Test seam: production uses the installed Office/NDC ODF converter.
+// Test seams: the Office converter and workspace creation can be replaced in
+// synthetic tests. No workspace is created for ordinary, small PDF-only ZIPs.
 var convertEditable = convertDocumentToPDF
+var createZIPWorkspace = os.MkdirTemp
+
+// Keep regular ZIPs in memory. Large PDFs deliberately fall back to a private
+// temporary workspace, so the tool does not exhaust memory on older PCs.
+const zipPDFMemoryBudget uint64 = 96 * 1024 * 1024
+
+func readZIPDocument(item *zip.File) ([]byte, error) {
+    reader, err := item.Open()
+    if err != nil { return nil, err }
+    defer reader.Close()
+    data, err := io.ReadAll(io.LimitReader(reader, int64(item.UncompressedSize64)+1))
+    if err != nil { return nil, err }
+    if uint64(len(data)) != item.UncompressedSize64 {
+        return nil, errors.New("ZIP 內檔案解壓後大小不符")
+    }
+    return data, nil
+}
+
+func extractZIPDocument(item *zip.File, dest string) error {
+    reader, err := item.Open()
+    if err != nil { return err }
+    defer reader.Close()
+    writer, err := os.OpenFile(dest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+    if err != nil { return err }
+    n, copyErr := io.Copy(writer, io.LimitReader(reader, int64(item.UncompressedSize64)+1))
+    closeErr := writer.Close()
+    if copyErr == nil { copyErr = closeErr }
+    if copyErr == nil && uint64(n) != item.UncompressedSize64 {
+        copyErr = errors.New("ZIP 內檔案解壓後大小不符")
+    }
+    if copyErr != nil {
+        os.Remove(dest)
+    }
+    return copyErr
+}
 
 func mergeOfficialZIP(j *officialJob, out string) (int, error) {
-	zr, err := zip.OpenReader(j.ZipPath)
-	if err != nil {
-		return 0, err
-	}
-	defer zr.Close()
-	dir, err := os.MkdirTemp("", "official-pdf-zip-*")
-	if err != nil {
-		return 0, err
-	}
-	defer os.RemoveAll(dir)
-	files := make([]string, 0, len(j.Entries))
-	total := uint64(0)
-	for i, e := range j.Entries {
-		if e.index < 0 || e.index >= len(zr.File) {
-			return 0, errors.New("ZIP 內容已變更，請重新選擇")
-		}
-		item := zr.File[e.index]
-		if item.UncompressedSize64 > 700*1024*1024 {
-			return 0, errors.New("附件超過大小限制")
-		}
-		total += item.UncompressedSize64
-		if total > 1200*1024*1024 {
-			return 0, errors.New("全部附件超過 1.2 GB 限制")
-		}
-		in, err := item.Open()
-		if err != nil {
-			return 0, err
-		}
-		ext := strings.ToLower(filepath.Ext(e.name))
-		name := filepath.Join(dir, fmt.Sprintf("%04d%s", i, ext))
-		f, err := os.Create(name)
-		if err != nil {
-			in.Close()
-			return 0, err
-		}
-		n, err := io.Copy(f, io.LimitReader(in, int64(item.UncompressedSize64)+1))
-		a := f.Close()
-		in.Close()
-		if err != nil {
-			return 0, err
-		}
-		if a != nil {
-			return 0, a
-		}
-		if uint64(n) != item.UncompressedSize64 {
-			return 0, errors.New("附件大小不符")
-		}
-		if ext != ".pdf" {
-			converted := filepath.Join(dir, fmt.Sprintf("%04d-converted.pdf", i))
-			if err := convertEditable(name, converted); err != nil {
-				return 0, fmt.Errorf("附件 %s 轉成 PDF 失敗：%w", e.name, err)
-			}
-			if st, err := os.Stat(converted); err != nil || st.Size() < 16 {
-				return 0, fmt.Errorf("附件 %s 轉換後未產生有效 PDF", e.name)
-			}
-			name = converted
-		}
-		files = append(files, name)
-	}
-	if len(files) == 1 {
-		// Single input: preserve bytes and any original document-level metadata.
-		if _, e := os.Stat(out); e == nil {
-			return 0, errors.New("輸出檔已存在")
-		}
-		input, e := os.ReadFile(files[0])
-		if e != nil {
-			return 0, e
-		}
-		if !bytes.HasPrefix(bytes.TrimSpace(input), []byte("%PDF-")) {
-			return 0, errors.New("主文不是有效的 PDF")
-		}
-		pdf, e := parsePDF(files[0])
-		if e != nil {
-			return 0, e
-		}
-		f, e := os.OpenFile(out, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-		if e != nil {
-			return 0, e
-		}
-		_, e = f.Write(input)
-		ce := f.Close()
-		if e == nil {
-			e = ce
-		}
-		if e != nil {
-			os.Remove(out)
-			return 0, e
-		}
-		return pdf.count, nil
-	}
-	return mergePDFFiles(files, out)
+    zr, err := zip.OpenReader(j.ZipPath)
+    if err != nil { return 0, err }
+    defer zr.Close()
+
+    // Allocate a workspace only if a file requires Office conversion or an
+    // unusually large PDF exceeds the in-memory processing budget.
+    workspace := ""
+    defer func() {
+        if workspace != "" { os.RemoveAll(workspace) }
+    }()
+    getWorkspace := func() (string, error) {
+        if workspace == "" {
+            workspace, err = createZIPWorkspace("", "official-pdf-zip-*")
+            if err != nil { return "", err }
+        }
+        return workspace, nil
+    }
+
+    docs := make([]*pdfInput, 0, len(j.Entries))
+    var total, memoryPDF uint64
+    singleFile := ""
+    var singleBytes []byte
+
+    for i, entry := range j.Entries {
+        if entry.index < 0 || entry.index >= len(zr.File) {
+            return 0, errors.New("ZIP 內容已變更，請重新選擇")
+        }
+        item := zr.File[entry.index]
+        if item.UncompressedSize64 > 700*1024*1024 {
+            return 0, errors.New("附件超過大小限制")
+        }
+        if total > 1200*1024*1024-item.UncompressedSize64 {
+            return 0, errors.New("全部附件超過 1.2 GB 限制")
+        }
+        total += item.UncompressedSize64
+
+        ext := strings.ToLower(filepath.Ext(entry.name))
+        if ext == ".pdf" && item.UncompressedSize64 <= zipPDFMemoryBudget-memoryPDF {
+            data, e := readZIPDocument(item)
+            if e != nil { return 0, fmt.Errorf("%s：%w", entry.name, e) }
+            doc, e := parsePDFBytes(data, entry.name)
+            if e != nil { return 0, fmt.Errorf("%s：%w", entry.name, e) }
+            docs = append(docs, doc)
+            memoryPDF += uint64(len(data))
+            if len(j.Entries) == 1 { singleBytes = data }
+            continue
+        }
+
+        folder, e := getWorkspace()
+        if e != nil { return 0, e }
+        path := filepath.Join(folder, fmt.Sprintf("%04d%s", i, ext))
+        if e := extractZIPDocument(item, path); e != nil {
+            return 0, fmt.Errorf("解壓 %s：%w", entry.name, e)
+        }
+        if ext != ".pdf" {
+            converted := filepath.Join(folder, fmt.Sprintf("%04d-converted.pdf", i))
+            if e := convertEditable(path, converted); e != nil {
+                return 0, fmt.Errorf("附件 %s 轉成 PDF 失敗：%w", entry.name, e)
+            }
+            if e := verifyConvertedPDF(converted); e != nil {
+                return 0, fmt.Errorf("附件 %s 轉換結果無效：%w", entry.name, e)
+            }
+            path = converted
+        }
+        doc, e := parsePDF(path)
+        if e != nil { return 0, fmt.Errorf("%s：%w", entry.name, e) }
+        docs = append(docs, doc)
+        if len(j.Entries) == 1 { singleFile = path }
+    }
+
+    if len(docs) == 0 { return 0, errors.New("公文 ZIP 不含可合併的 PDF") }
+    if len(docs) > 1 {
+        return mergePDFDocuments(docs, out)
+    }
+
+    // One-PDF ZIPs preserve the original document bytes and metadata. Do not
+    // create an intermediate PDF or modify an existing output.
+    f, e := os.OpenFile(out, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+    if e != nil { return 0, e }
+    var writeErr error
+    if singleBytes != nil {
+        _, writeErr = f.Write(singleBytes)
+    } else {
+        source, openErr := os.Open(singleFile)
+        if openErr == nil {
+            _, writeErr = io.Copy(f, source)
+            source.Close()
+        } else { writeErr = openErr }
+    }
+    closeErr := f.Close()
+    if writeErr == nil { writeErr = closeErr }
+    if writeErr != nil {
+        os.Remove(out)
+        return 0, writeErr
+    }
+    return docs[0].count, nil
 }
