@@ -241,6 +241,7 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
     docs := make([]*pdfInput, len(j.Entries))
     var total, memoryPDF uint64
     var singleBytes []byte
+    singleFile := ""
     pendingInputs := make([]string, 0)
     pendingOutputs := make([]string, 0)
     pendingIndices := make([]int, 0)
@@ -280,6 +281,7 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
             doc, e := parsePDF(path)
             if e != nil { return 0, fmt.Errorf("%s：%w", entry.name, e) }
             docs[i] = doc
+            if len(j.Entries) == 1 { singleFile = path }
         } else {
             pendingInputs = append(pendingInputs, path)
             pendingOutputs = append(pendingOutputs, filepath.Join(folder, fmt.Sprintf("%04d-converted.pdf", i)))
@@ -319,7 +321,15 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
     if singleBytes != nil {
         _, writeErr = f.Write(singleBytes)
     } else {
-        writeErr = errors.New("單一主文未取得 PDF 資料")
+        if singleFile == "" {
+            writeErr = errors.New("單一主文未取得 PDF 資料")
+        } else {
+            source, openErr := os.Open(singleFile)
+            if openErr == nil {
+                _, writeErr = io.Copy(f, source)
+                source.Close()
+            } else { writeErr = openErr }
+        }
     }
     closeErr := f.Close()
     if writeErr == nil { writeErr = closeErr }
