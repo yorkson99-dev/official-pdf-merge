@@ -21,6 +21,8 @@ func mergeMixedFiles(inputs []string, output string) (int, error) {
         if tempDir != "" { os.RemoveAll(tempDir) }
     }()
     pdfs := make([]string, 0, len(inputs))
+    officeInputs := make([]string,0)
+    officeOutputs := make([]string,0)
     for i, input := range inputs {
         ext := strings.ToLower(filepath.Ext(input))
         if !supportedOfficialExt(ext) {
@@ -37,13 +39,29 @@ func mergeMixedFiles(inputs []string, output string) (int, error) {
             tempDir = folder
         }
         converted := filepath.Join(tempDir, fmt.Sprintf("%04d.pdf", i))
-        if err := convertEditable(input, converted); err != nil {
-            return 0, fmt.Errorf("%s 轉換失敗：%w", filepath.Base(input), err)
-        }
-        if err := verifyConvertedPDF(converted); err != nil {
-            return 0, fmt.Errorf("%s 轉換結果無效：%w", filepath.Base(input), err)
-        }
+        officeInputs = append(officeInputs,input)
+        officeOutputs = append(officeOutputs,converted)
         pdfs = append(pdfs, converted)
+    }
+    // Keep the original ordered PDF list while converting editable inputs
+    // in bounded, sequential groups using one Office COM STA per group.
+    for start:=0;start<len(officeInputs);start+=officeBatchLimit {
+        end:=start+officeBatchLimit
+        if end>len(officeInputs){end=len(officeInputs)}
+        if end-start==1 {
+            if err:=convertEditable(officeInputs[start],officeOutputs[start]);err!=nil{
+                return 0,fmt.Errorf("%s 轉換失敗：%w",filepath.Base(officeInputs[start]),err)
+            }
+        } else {
+            if err:=convertEditableBatch(officeInputs[start:end],officeOutputs[start:end]);err!=nil{
+                return 0,fmt.Errorf("文件批次轉換失敗：%w",err)
+            }
+        }
+        for i:=start;i<end;i++{
+            if err:=verifyConvertedPDF(officeOutputs[i]);err!=nil{
+                return 0,fmt.Errorf("%s 轉換結果無效：%w",filepath.Base(officeInputs[i]),err)
+            }
+        }
     }
     if len(pdfs) == 1 {
         // A single editable document can still be dropped onto the EXE to
