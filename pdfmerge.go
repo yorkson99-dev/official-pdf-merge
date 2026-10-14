@@ -218,7 +218,8 @@ func parsePDFBytes(all []byte, source string) (*pdfInput, error) {
 	if !typePagesPattern.Match(objectDict(root.data)) {
 		return nil, errors.New("PDF 頁面樹格式不符")
 	}
-	in.count, err = readNumber(objectDict(root.data), countPattern)
+	count, err := readNumber(objectDict(root.data), countPattern)
+	in.count = count
 	if err != nil || in.count < 1 {
 		return nil, errors.New("無法確認 PDF 頁數")
 	}
@@ -559,10 +560,11 @@ func mergePDFDocuments(docs []*pdfInput, output string) (int, error) {
 		for _, key := range keys {
 			body := relocateObject(doc.objects[key], m)
 			if key == doc.root {
-				body, e = appendParent(body, 2)
-				if e != nil {
-					return 0, e
+				parented, err := appendParent(body, 2)
+				if err != nil {
+					return 0, err
 				}
+				body = parented
 			}
 			if e := writer.object(m[key], body); e != nil {
 				return 0, e
