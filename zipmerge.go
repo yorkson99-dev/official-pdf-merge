@@ -182,6 +182,8 @@ func (j *officialJob) outputName(detailed bool) (string, error) {
 // Test seams: the Office converter and workspace creation can be replaced in
 // synthetic tests. No workspace is created for ordinary, small PDF-only ZIPs.
 var convertEditable = convertDocumentToPDF
+var convertEditableBatch = convertDocumentsToPDFBatch
+const officeBatchLimit = 3
 var createZIPWorkspace = os.MkdirTemp
 
 // Keep regular ZIPs in memory. Large PDFs deliberately fall back to a private
@@ -237,11 +239,16 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
         return workspace, nil
     }
 
-    docs := make([]*pdfInput, 0, len(j.Entries))
+    docs := make([]*pdfInput, len(j.Entries))
     var total, memoryPDF uint64
     singleFile := ""
     var singleBytes []byte
+    officeInputs := make([]string, 0)
+    officeOutputs := make([]string, 0)
+    officeIndices := make([]int, 0)
 
+    // PDFs remain in memory wherever possible. Editable documents require
+    // their original input and converted PDF on disk for the Office API.
     for i, entry := range j.Entries {
         if entry.index < 0 || entry.index >= len(zr.File) {
             return 0, errors.New("ZIP 內容已變更，請重新選擇")
@@ -261,7 +268,7 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
             if e != nil { return 0, fmt.Errorf("%s：%w", entry.name, e) }
             doc, e := parsePDFBytes(data, entry.name)
             if e != nil { return 0, fmt.Errorf("%s：%w", entry.name, e) }
-            docs = append(docs, doc)
+            docs[i] = doc
             memoryPDF += uint64(len(data))
             if len(j.Entries) == 1 { singleBytes = data }
             continue
@@ -273,22 +280,43 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
         if e := extractZIPDocument(item, path); e != nil {
             return 0, fmt.Errorf("解壓 %s：%w", entry.name, e)
         }
-        if ext != ".pdf" {
-            converted := filepath.Join(folder, fmt.Sprintf("%04d-converted.pdf", i))
-            if e := convertEditable(path, converted); e != nil {
-                return 0, fmt.Errorf("附件 %s 轉成 PDF 失敗：%w", entry.name, e)
-            }
-            if e := verifyConvertedPDF(converted); e != nil {
-                return 0, fmt.Errorf("附件 %s 轉換結果無效：%w", entry.name, e)
-            }
-            path = converted
+        if ext == ".pdf" {
+            doc, e := parsePDF(path)
+            if e != nil { return 0, fmt.Errorf("%s：%w", entry.name, e) }
+            docs[i] = doc
+            if len(j.Entries)==1 { singleFile = path }
+        } else {
+            officeInputs = append(officeInputs,path)
+            officeOutputs = append(officeOutputs,filepath.Join(folder,fmt.Sprintf("%04d-converted.pdf",i)))
+            officeIndices = append(officeIndices,i)
         }
-        doc, e := parsePDF(path)
-        if e != nil { return 0, fmt.Errorf("%s：%w", entry.name, e) }
-        docs = append(docs, doc)
-        if len(j.Entries) == 1 { singleFile = path }
     }
 
+    // Convert no more than three editable documents per stage; COM remains
+    // single-threaded. Each stage is parsed into memory before the next, with
+    // no intermediate merged PDF written to disk.
+    for base:=0;base<len(officeInputs);base+=officeBatchLimit {
+        end:=base+officeBatchLimit
+        if end>len(officeInputs) {end=len(officeInputs)}
+        if end-base==1 {
+            if e:=convertEditable(officeInputs[base],officeOutputs[base]);e!=nil {
+                return 0,fmt.Errorf("附件 %s 轉成 PDF 失敗：%w",j.Entries[officeIndices[base]].name,e)
+            }
+        } else {
+            if e:=convertEditableBatch(officeInputs[base:end],officeOutputs[base:end]);e!=nil{
+                return 0,fmt.Errorf("第%d階段的 Office 附件轉檔失敗：%w",base/officeBatchLimit+1,e)
+            }
+        }
+        for k:=base;k<end;k++ {
+            i:=officeIndices[k]
+            if e:=verifyConvertedPDF(officeOutputs[k]);e!=nil{
+                return 0,fmt.Errorf("附件 %s 轉換結果無效：%w",j.Entries[i].name,e)
+            }
+            doc,e:=parsePDF(officeOutputs[k])
+            if e!=nil{return 0,fmt.Errorf("%s：%w",j.Entries[i].name,e)}
+            docs[i]=doc
+        }
+    }
     if len(docs) == 0 { return 0, errors.New("公文 ZIP 不含可合併的 PDF") }
     if len(docs) > 1 {
         return mergePDFDocuments(docs, out)
