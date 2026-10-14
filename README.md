@@ -40,6 +40,16 @@
 
 原生 Win32 極簡風格，淺色卡片與重點藍色操作區；應用程式圖示已嵌入單一 EXE。啟動時不需要瀏覽器核心、網路連線或新增使用者端套件。Office 轉檔由 EXE 直接使用 Windows COM API，沒有額外 PowerShell 主控台或轉檔子命令列。未變更防毒程式、監控或執行政策。
 
+### v1.6.1：減少磁碟讀寫（維護版）
+
+- 純 PDF 公文 ZIP（PDF 未超過預設合計 96 MiB 記憶體額度）：直接解壓至記憶體並解析 PDF 物件，**不再逐件寫入暫存 PDF 檔案**。
+- 超過記憶體額度的大型 PDF：保留受控的磁碟暫存路徑，避免在較舊電腦耗盡記憶體。
+- 混有 DOCX／ODT／XLSX／PPTX 等 Office 文件：**只針對需要轉檔的項目**建立暫存來源與轉檔結果 PDF。轉檔仍使用既有 Microsoft Office COM；沒有移除必要的來源文件暫存步驟。
+- 一般 PDF-only 手動合併：不再無條件建立工作資料夾。
+- 多份 PDF 的最終輸出仍先寫入**同一目錄的單一暫存結果檔案**，寫入完成後才重新命名，保留防止部分寫出、輸出毀損的保護。
+- 回歸測試確認純 PDF 無解壓工作資料夾、單一主文保留位元組、附件順序／頁數正確、Office 文件轉檔失敗不留下輸出 PDF。
+- **這是正常的效能與資料完整性優化，不是 Apex One 的偵測排除措施。** 防毒仍可能對未簽章檔案或其他操作發出警示。
+
 ### 驗證範圍
 
 GitHub CI 驗證 PDF 合併核心、模擬 ODT/DOCX/PPTX 附件篩選排序與合併、ZIP 一鍵模式及 Windows 按鈕回應。GitHub Windows Runner 使用 Windows COM 元件驗證 VARIANT／BSTR／IDispatch 介面呼叫，但**未安裝 Office**，因此 Word／Excel／PowerPoint 的實際轉 PDF 仍須於已安裝 Office 的公務電腦上核對。
