@@ -10,7 +10,7 @@
 - EXE 未經程式碼簽章。機關電腦可能因應用程式控管政策禁止執行；須由資訊管理單位依法規與機關程序審核，請勿繞過管制。
 - 開發／重新建置在 GitHub Actions 上進行；**公務電腦只下載已建置的 EXE**。
 
-## 快速使用（v1.6.2，Office COM 穩定性版）
+## 快速使用（v1.6.3，Office COM／逐份串流合併版）
 
 ### 公文 ZIP（一鍵自動化）
 
@@ -61,6 +61,18 @@
 - 此為檔案處理效能及資源管理優化，**不是為了繞過Apex One偵測**。對未簽章EXE的機器學習分類及行為偵測，不能保證一定不再誤判。CI沒有安裝Office，真實Word／Excel／PowerPoint批次轉換仍需在有Office的電腦驗證。
 - 此維護版本獨立保存在 `maintenance/v1.6.2-office` 分支。GitHub預設 `main` 的 v1.7.0 NDC ODF 開發歷史不受影響。
 
+### v1.6.3：逐份解析、直接串流至單一PDF輸出
+
+- 保留 v1.6.2 的 Microsoft Office COM 排版引擎、公文ZIP附件篩選／排序／命名、每階段最多3份可編輯文件的循序轉檔，以及Windows原生GUI。
+- **PDF合併核心改為逐份解析、逐份重定位物件並直接寫入同一輸出檔**。每完成一份即可釋放該份已解析的PDF物件，下一份不需重新讀取或重寫此前輸出的內容。
+- 最終合併PDF的**頁面樹（Pages）、交叉參照表（xref）及trailer等到最後才一次寫入**，不製作「前三份合成A、A再與4／5合成B」等中間PDF。輸出仍採256 KiB緩衝並在成功後原子重新命名。
+- ZIP中的一般大小PDF直接從ZIP讀入記憶體，逐份處理。單一大PDF仍可能在解析期間使用較多記憶體，不能宣稱全流程為固定記憶體用量；不會把12份PDF的解析物件同時保留到最終合併。
+- Office COM必須將可編輯文件解壓到私人工作資料夾，並生成短期轉檔PDF；這些是Office原生轉檔所需的**工作檔案**，不等於中間合併PDF。程式處理後清除它們。
+- 純PDF手動合併同樣使用新的逐份串流核心；單份ZIP PDF仍完整保留原始位元組與中繼資料。
+- 新增測試：12份PDF以增量物件寫入生成合法PDF頁面樹、末份損毀時刪除未完成的暫存輸出、既有輸出不覆寫。並延續 v1.6.2 的12份混合附件及3＋3＋1階段測試。
+- **這是記憶體與磁碟輸出架構改善，並不保證Trend Micro Apex One停止攔截**。GitHub Windows Runner沒有Microsoft Office，真正連續Office轉檔及防毒行為均須由環境允許的實機測試確認。
+- 此版本獨立在 `maintenance/v1.6.3-stream` 維護分支發布，不修改既有 v1.6.1／v1.6.2／v1.7.0 發布版本或 `main` 分支。
+
 ### 驗證範圍
 
 GitHub CI 驗證 PDF 合併核心、模擬 ODT/DOCX/PPTX 附件篩選排序與合併、ZIP 一鍵模式及 Windows 按鈕回應。GitHub Windows Runner 使用 Windows COM 元件驗證 VARIANT／BSTR／IDispatch 介面呼叫，但**未安裝 Office**，因此 Word／Excel／PowerPoint 的實際轉 PDF 仍須於已安裝 Office 的公務電腦上核對。
@@ -97,6 +109,6 @@ go build -trimpath -ldflags="-H=windowsgui -s -w" -o "公文PDF快合.exe" .
 
 ## 來源檔案與授權
 
-Windows 入口為 `main_windows.go`，主文解析為 `lettertext.go`，公文 ZIP 規則為 `zipmerge.go`，PDF 合併核心為 `pdfmerge.go`。
+Windows 入口為 `main_windows.go`，主文解析為 `lettertext.go`，公文 ZIP 規則為 `zipmerge.go`，PDF 解析核心為 `pdfmerge.go`，串流合併為 `pdfmerge_stream.go`。
 
 程式僅供依機關資訊安全政策核可後使用。
