@@ -1,7 +1,7 @@
 name: Build standalone Win32 EXE
 on:
   push:
-    branches: [maintenance/v1.6.2-office]
+    branches: [maintenance/v1.6.3-stream]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -86,17 +86,17 @@ jobs:
           name: OfficialPDFMerge-win64
           path: 公文PDF快合.exe
           if-no-files-found: error
-      - name: Publish portable EXE release v1.6.2
-        if: github.event_name == 'push' && github.ref == 'refs/heads/maintenance/v1.6.2-office' && contains(github.event.head_commit.message, 'release-v1.6.2')
+      - name: Publish portable EXE release v1.6.3
+        if: github.event_name == 'push' && github.ref == 'refs/heads/maintenance/v1.6.3-stream' && contains(github.event.head_commit.message, 'release-v1.6.3')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           Copy-Item -LiteralPath "公文PDF快合.exe" -Destination "OfficialPDFMerge.exe" -Force
-          gh release view v1.6.2 --json tagName *> $null
+          gh release view v1.6.3 --json tagName *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload v1.6.2 "OfficialPDFMerge.exe" --clobber
+            gh release upload v1.6.3 "OfficialPDFMerge.exe" --clobber
           } else {
-            gh release create v1.6.2 "OfficialPDFMerge.exe" --target maintenance/v1.6.2-office --latest=false --title "公文 PDF 快合 v1.6.2" --notes "Office COM 維護版：以 v1.6.1 為基底，保留 Microsoft Word／Excel／PowerPoint 原生轉檔。可編輯附件每階段最多3份、同引擎共用 STA Office 工作階段，純PDF仍走記憶體處理，最終使用緩衝寫入並僅輸出一份完整PDF。新增12份混合附件與3＋3＋1階段測試。安全軟體警示不保證消失，需另行驗證。" --latest
+            gh release create v1.6.3 "OfficialPDFMerge.exe" --target maintenance/v1.6.3-stream --latest=false --title "公文 PDF 快合 v1.6.3" --notes "串流合併版：沿用 v1.6.2 Microsoft Office COM。逐份解析並寫入PDF物件，最後建立頁面樹及交叉參照表；整體僅產生一份原子發布的合併PDF。Office轉檔仍需短期工作檔。安全軟體偵測尚待實機驗證。" --latest
           }
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed" }
