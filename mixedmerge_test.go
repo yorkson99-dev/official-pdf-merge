@@ -20,12 +20,15 @@ func TestMixedMergeKeepsInputOrder(t *testing.T) {
         if p==d { data=[]byte("synthetic xlsx") }
         if err=os.WriteFile(p,data,0600);err!=nil{t.Fatal(err)}
     }
-    old:=convertEditable
-    defer func(){convertEditable=old}()
+    old:=convertEditableBatch
+    defer func(){convertEditableBatch=old}()
     var order []string
-    convertEditable=func(src,dst string) error {
-        order=append(order,filepath.Base(src))
-        return os.WriteFile(dst,b,0600)
+    convertEditableBatch=func(srcs,dsts []string) error {
+        for i,src:=range srcs {
+            order=append(order,filepath.Base(src))
+            if err:=os.WriteFile(dsts[i],b,0600);err!=nil{return err}
+        }
+        return nil
     }
     output:=filepath.Join(root,"output.pdf")
     count,err:=mergeMixedFiles([]string{a,c,d},output)
