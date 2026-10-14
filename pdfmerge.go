@@ -110,6 +110,12 @@ func parsePDF(file string) (*pdfInput, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parsePDFBytes(all, file)
+}
+
+// parsePDFBytes parses a PDF directly from memory. ZIP entries no longer need
+// to be extracted to disk just to be passed to the object-level PDF merger.
+func parsePDFBytes(all []byte, source string) (*pdfInput, error) {
 	if !bytes.HasPrefix(bytes.TrimSpace(all), []byte("%PDF-")) {
 		return nil, errors.New("不是有效的 PDF 檔案")
 	}
@@ -119,7 +125,7 @@ func parsePDF(file string) (*pdfInput, error) {
 	if len(all) > 700*1024*1024 {
 		return nil, errors.New("單一 PDF 超過 700 MB，已超出輕量版限制")
 	}
-	in := &pdfInput{source: file, objects: make(map[objKey]*pdfObject)}
+	in := &pdfInput{source: source, objects: make(map[objKey]*pdfObject)}
 	offset := 0
 	for offset < len(all) {
 		loc := objectStart.FindSubmatchIndex(all[offset:])
@@ -466,6 +472,26 @@ func mergePDFFiles(inputs []string, output string) (int, error) {
 		}
 		pages += doc.count
 		docs = append(docs, doc)
+	}
+	return mergePDFDocuments(docs, output)
+}
+
+// mergePDFDocuments writes already-parsed PDFs. It avoids reading input PDFs
+// from temporary extracted files; the final sibling .tmp is retained for
+// atomic publish and to avoid exposing partial official correspondence.
+func mergePDFDocuments(docs []*pdfInput, output string) (int, error) {
+	if len(docs) < 2 {
+		return 0, errors.New("至少需要 2 份 PDF")
+	}
+	pages := 0
+	for _, doc := range docs {
+		if doc == nil || doc.count < 1 {
+			return 0, errors.New("無效的 PDF 輸入")
+		}
+		if pages+doc.count > 100000 {
+			return 0, errors.New("總頁數超出 100,000 頁上限")
+		}
+		pages += doc.count
 	}
 	// 1 = new document catalog, 2 = new page tree.
 	next := 3
