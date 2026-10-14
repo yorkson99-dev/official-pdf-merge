@@ -38,12 +38,15 @@ func TestZipEditableAttachmentsAreOrderedAndNotSilentlyDropped(t *testing.T) {
  if len(job.Entries) != 4 { t.Fatalf("got %d entries, want 4",len(job.Entries)) }
  expected := []string{"7_9.pdf","7_9_ATTCH1.odt","7_9_ATTCH2.docx","7_9_ATTCH10.pptx"}
  for i,x := range expected { if job.Entries[i].name!=x { t.Errorf("order %d: %s != %s",i,job.Entries[i].name,x) } }
- old := convertEditable
- defer func(){convertEditable=old}()
+ old := convertEditableBatch
+ defer func(){convertEditableBatch=old}()
  var encountered []string
- convertEditable = func(input, out string) error {
-  encountered=append(encountered,strings.ToLower(filepath.Ext(input)))
-  return os.WriteFile(out,src,0600)
+ convertEditableBatch = func(inputs, outputs []string) error {
+  for i, input := range inputs {
+   encountered=append(encountered,strings.ToLower(filepath.Ext(input)))
+   if err:=os.WriteFile(outputs[i],src,0600);err!=nil{return err}
+  }
+  return nil
  }
  target := filepath.Join(root,"merged.pdf")
  pages,err := mergeOfficialZIP(job,target)
