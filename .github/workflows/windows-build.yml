@@ -97,6 +97,6 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload v1.6.3 "OfficialPDFMerge.exe" --clobber
           } else {
-            gh release create v1.6.3 "OfficialPDFMerge.exe" --target maintenance/v1.6.3-stream --latest=false --title "公文 PDF 快合 v1.6.3" --notes "串流合併版：沿用 v1.6.2 Microsoft Office COM。逐份解析並寫入PDF物件，最後建立頁面樹及交叉參照表；整體僅產生一份原子發布的合併PDF。Office轉檔仍需短期工作檔。安全軟體偵測尚待實機驗證。" --latest
+            gh release create v1.6.3 "OfficialPDFMerge.exe" --target maintenance/v1.6.3-stream --latest=false --title "公文 PDF 快合 v1.6.3" --notes "串流合併版：沿用 v1.6.2 Microsoft Office COM。逐份解析並寫入PDF物件，最後建立頁面樹及交叉參照表；整體僅產生一份原子發布的合併PDF。Office轉檔仍需短期工作檔。安全軟體偵測尚待實機驗證。"
           }
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed" }
