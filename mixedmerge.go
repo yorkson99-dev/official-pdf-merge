@@ -21,6 +21,8 @@ func mergeMixedFiles(inputs []string, output string) (int, error) {
         if tempDir != "" { os.RemoveAll(tempDir) }
     }()
     pdfs := make([]string, 0, len(inputs))
+    pendingInputs := make([]string, 0)
+    pendingOutputs := make([]string, 0)
     for i, input := range inputs {
         ext := strings.ToLower(filepath.Ext(input))
         if !supportedOfficialExt(ext) {
@@ -37,13 +39,24 @@ func mergeMixedFiles(inputs []string, output string) (int, error) {
             tempDir = folder
         }
         converted := filepath.Join(tempDir, fmt.Sprintf("%04d.pdf", i))
-        if err := convertEditable(input, converted); err != nil {
-            return 0, fmt.Errorf("%s 轉換失敗：%w", filepath.Base(input), err)
+        pendingInputs = append(pendingInputs, input)
+        pendingOutputs = append(pendingOutputs, converted)
+        pdfs = append(pdfs, converted)
+    }
+    // Send editable files in one NDC invocation; PDF order is kept in pdfs.
+    if len(pendingInputs) == 1 {
+        if err := convertEditable(pendingInputs[0], pendingOutputs[0]); err != nil {
+            return 0, fmt.Errorf("%s 轉換失敗：%w", filepath.Base(pendingInputs[0]), err)
         }
-        if err := verifyConvertedPDF(converted); err != nil {
+    } else if len(pendingInputs) > 1 {
+        if err := convertEditableBatch(pendingInputs, pendingOutputs); err != nil {
+            return 0, fmt.Errorf("文件批次轉換失敗：%w", err)
+        }
+    }
+    for i, input := range pendingInputs {
+        if err := verifyConvertedPDF(pendingOutputs[i]); err != nil {
             return 0, fmt.Errorf("%s 轉換結果無效：%w", filepath.Base(input), err)
         }
-        pdfs = append(pdfs, converted)
     }
     if len(pdfs) == 1 {
         // A single editable document can still be dropped onto the EXE to
