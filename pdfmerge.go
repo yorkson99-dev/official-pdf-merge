@@ -5,6 +5,7 @@ package main
 // a newly created root. This keeps original page contents, fonts and page sizes.
 
 import (
+	"bufio"
 	"bytes"
 	"compress/flate"
 	"compress/zlib"
@@ -536,7 +537,10 @@ func mergePDFDocuments(docs []*pdfInput, output string) (int, error) {
 			os.Remove(tmpName)
 		}
 	}()
-	writer := &pdfWriter{out: temp, offsets: make([]int64, next)}
+	// Consolidate many small PDF object writes into buffered disk writes.
+	// This is an I/O performance improvement, not a change to PDF bytes.
+	buffer := bufio.NewWriterSize(temp, 256*1024)
+	writer := &pdfWriter{out: buffer, offsets: make([]int64, next)}
 	if e := writer.write([]byte("%PDF-1.7\n%\xE2\xE3\xCF\xD3\n")); e != nil {
 		return 0, e
 	}
@@ -574,6 +578,9 @@ func mergePDFDocuments(docs []*pdfInput, output string) (int, error) {
 	if e := writer.finish(1); e != nil {
 		return 0, e
 	}
+	if e := buffer.Flush(); e != nil {
+		return 0, e
+	}
 	if e := temp.Sync(); e != nil {
 		return 0, e
 	}
@@ -592,7 +599,7 @@ func mergePDFDocuments(docs []*pdfInput, output string) (int, error) {
 }
 
 type pdfWriter struct {
-	out     *os.File
+	out     io.Writer
 	offset  int64
 	offsets []int64
 }
