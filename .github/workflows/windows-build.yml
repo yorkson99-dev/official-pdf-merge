@@ -36,17 +36,18 @@ jobs:
           cache: false
       - name: Unit tests
         run: go test ./...
-      - name: Verify no shell-based Office conversion path
+      - name: Verify exclusive NDC ODF conversion backend
         shell: pwsh
         run: |
-          $source = (Get-Content -Raw office_windows.go) + (Get-Content -Raw office_com_windows.go)
-          if ($source -match 'powershell[.]exe|soffice[.]exe|exec[.]Command|os/exec|cmd[.]exe') {
-            throw 'Office conversion unexpectedly launches a shell or external document converter'
+          $source = (Get-Content -Raw office_windows.go) + (Get-Content -Raw ndc_windows.go)
+          if ($source -notmatch 'soffice[.]com') { throw 'NDC ODF executable not configured' }
+          if ($source -match 'Word[.]Application|Excel[.]Application|PowerPoint[.]Application|powershell[.]exe') {
+            throw 'Legacy Office COM or PowerShell conversion path detected'
           }
-          Write-Output 'PASS: conversion uses native COM only'
-      - name: Exercise COM IDispatch ABI on hosted Windows runner
+          Write-Output 'PASS: NDC ODF is the only bundled Office/ODF converter'
+      - name: NDC ODF argument and mocked batch conversion tests
         shell: pwsh
-        run: go test -run TestNativeCOMDispatchOnWindows -v .
+        run: go test -run TestNDC -v .
       - name: Build single Windows x64 GUI executable
         shell: pwsh
         run: |
@@ -86,18 +87,18 @@ jobs:
           name: OfficialPDFMerge-win64
           path: 公文PDF快合.exe
           if-no-files-found: error
-      - name: Publish portable EXE release v1.6.1
+      - name: Publish portable EXE release v1.7.0
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           Copy-Item -LiteralPath "公文PDF快合.exe" -Destination "OfficialPDFMerge.exe" -Force
-          gh release view v1.6.1 --json tagName *> $null
+          gh release view v1.7.0 --json tagName *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload v1.6.1 "OfficialPDFMerge.exe" --clobber
+            gh release upload v1.7.0 "OfficialPDFMerge.exe" --clobber
           } else {
-            gh release create v1.6.1 "OfficialPDFMerge.exe" --target main --title "公文 PDF 快合 v1.6.1" --notes "維護版：一般大小的純 PDF 公文 ZIP 改在記憶體中解析及合併，免逐件解壓暫存；僅 Office 轉檔及大型文件需要工作資料夾。維持單一 EXE、原有命名排序及 COM 轉檔。保留安全的同目錄暫存輸出後正式命名。不以效能調整取代端點安全驗證。" --latest
+            gh release create v1.7.0 "OfficialPDFMerge.exe" --target main --title "公文 PDF 快合 v1.7.0" --notes "離線 NDC ODF 轉檔版：直接呼叫已安裝 NDC ODF 3.3.3 的 soffice.com，以隔離設定檔和單次批次處理可編輯附件；移除 Microsoft Office COM 與 PowerShell。保留公文 ZIP 一鍵合併、排序、命名、記憶體 PDF 合併與資料安全驗證。Apex One 偵測仍須另行實測。" --latest
           }
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed" }
       - name: Check in extracted source files and remove bootstrap archive
