@@ -14,10 +14,12 @@ import (
 // Inputs are processed strictly in the order provided by the caller.
 func mergeMixedFiles(inputs []string, output string) (int, error) {
     if len(inputs) == 0 { return 0, errors.New("沒有要處理的文件") }
-    tempDir, err := os.MkdirTemp("", "official-pdf-manual-*")
-    if err != nil { return 0, err }
-    defer os.RemoveAll(tempDir)
-
+    // A pure-PDF manual merge needs no workspace at all. Only Office files
+    // require temporary converted documents.
+    tempDir := ""
+    defer func() {
+        if tempDir != "" { os.RemoveAll(tempDir) }
+    }()
     pdfs := make([]string, 0, len(inputs))
     for i, input := range inputs {
         ext := strings.ToLower(filepath.Ext(input))
@@ -29,6 +31,11 @@ func mergeMixedFiles(inputs []string, output string) (int, error) {
             continue
         }
         // Never put temporary Office/ODF outputs beside the user's documents.
+        if tempDir == "" {
+            folder, e := os.MkdirTemp("", "official-pdf-manual-*")
+            if e != nil { return 0, e }
+            tempDir = folder
+        }
         converted := filepath.Join(tempDir, fmt.Sprintf("%04d.pdf", i))
         if err := convertEditable(input, converted); err != nil {
             return 0, fmt.Errorf("%s 轉換失敗：%w", filepath.Base(input), err)
