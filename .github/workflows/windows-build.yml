@@ -87,7 +87,7 @@ jobs:
           path: 公文PDF快合.exe
           if-no-files-found: error
       - name: Publish portable EXE release v1.6.2
-        if: github.event_name == 'push' && github.ref == 'refs/heads/maintenance/v1.6.2-office' && contains(github.event.head_commit.message, 'release: v1.6.2')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/maintenance/v1.6.2-office' && contains(github.event.head_commit.message, 'release-v1.6.2')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
