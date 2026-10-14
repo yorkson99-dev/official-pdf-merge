@@ -179,9 +179,10 @@ func (j *officialJob) outputName(detailed bool) (string, error) {
 	}
 	return agency + suffix + ".pdf", nil
 }
-// Test seams: the Office converter and workspace creation can be replaced in
+// Test seams: the NDC converter and workspace creation can be replaced in
 // synthetic tests. No workspace is created for ordinary, small PDF-only ZIPs.
 var convertEditable = convertDocumentToPDF
+var convertEditableBatch = convertDocumentsToPDFBatch
 var createZIPWorkspace = os.MkdirTemp
 
 // Keep regular ZIPs in memory. Large PDFs deliberately fall back to a private
@@ -237,10 +238,12 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
         return workspace, nil
     }
 
-    docs := make([]*pdfInput, 0, len(j.Entries))
+    docs := make([]*pdfInput, len(j.Entries))
     var total, memoryPDF uint64
-    singleFile := ""
     var singleBytes []byte
+    pendingInputs := make([]string, 0)
+    pendingOutputs := make([]string, 0)
+    pendingIndices := make([]int, 0)
 
     for i, entry := range j.Entries {
         if entry.index < 0 || entry.index >= len(zr.File) {
@@ -261,7 +264,7 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
             if e != nil { return 0, fmt.Errorf("%s：%w", entry.name, e) }
             doc, e := parsePDFBytes(data, entry.name)
             if e != nil { return 0, fmt.Errorf("%s：%w", entry.name, e) }
-            docs = append(docs, doc)
+            docs[i] = doc
             memoryPDF += uint64(len(data))
             if len(j.Entries) == 1 { singleBytes = data }
             continue
@@ -273,22 +276,36 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
         if e := extractZIPDocument(item, path); e != nil {
             return 0, fmt.Errorf("解壓 %s：%w", entry.name, e)
         }
-        if ext != ".pdf" {
-            converted := filepath.Join(folder, fmt.Sprintf("%04d-converted.pdf", i))
-            if e := convertEditable(path, converted); e != nil {
-                return 0, fmt.Errorf("附件 %s 轉成 PDF 失敗：%w", entry.name, e)
-            }
-            if e := verifyConvertedPDF(converted); e != nil {
-                return 0, fmt.Errorf("附件 %s 轉換結果無效：%w", entry.name, e)
-            }
-            path = converted
+        if ext == ".pdf" {
+            doc, e := parsePDF(path)
+            if e != nil { return 0, fmt.Errorf("%s：%w", entry.name, e) }
+            docs[i] = doc
+        } else {
+            pendingInputs = append(pendingInputs, path)
+            pendingOutputs = append(pendingOutputs, filepath.Join(folder, fmt.Sprintf("%04d-converted.pdf", i)))
+            pendingIndices = append(pendingIndices, i)
         }
-        doc, e := parsePDF(path)
-        if e != nil { return 0, fmt.Errorf("%s：%w", entry.name, e) }
-        docs = append(docs, doc)
-        if len(j.Entries) == 1 { singleFile = path }
     }
 
+    // Batch all editable ZIP attachments into one NDC process. Do not let
+    // conversion completion order alter the original ATTCH numeric ordering.
+    if len(pendingInputs) == 1 {
+        if e := convertEditable(pendingInputs[0], pendingOutputs[0]); e != nil {
+            return 0, fmt.Errorf("附件 %s 轉成 PDF 失敗：%w", j.Entries[pendingIndices[0]].name, e)
+        }
+    } else if len(pendingInputs) > 1 {
+        if e := convertEditableBatch(pendingInputs, pendingOutputs); e != nil {
+            return 0, fmt.Errorf("批次附件轉檔失敗：%w", e)
+        }
+    }
+    for k, i := range pendingIndices {
+        if e := verifyConvertedPDF(pendingOutputs[k]); e != nil {
+            return 0, fmt.Errorf("附件 %s 轉換結果無效：%w", j.Entries[i].name, e)
+        }
+        doc, e := parsePDF(pendingOutputs[k])
+        if e != nil { return 0, fmt.Errorf("%s：%w", j.Entries[i].name, e) }
+        docs[i] = doc
+    }
     if len(docs) == 0 { return 0, errors.New("公文 ZIP 不含可合併的 PDF") }
     if len(docs) > 1 {
         return mergePDFDocuments(docs, out)
@@ -302,11 +319,7 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
     if singleBytes != nil {
         _, writeErr = f.Write(singleBytes)
     } else {
-        source, openErr := os.Open(singleFile)
-        if openErr == nil {
-            _, writeErr = io.Copy(f, source)
-            source.Close()
-        } else { writeErr = openErr }
+        writeErr = errors.New("單一主文未取得 PDF 資料")
     }
     closeErr := f.Close()
     if writeErr == nil { writeErr = closeErr }
