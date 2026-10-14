@@ -448,34 +448,25 @@ func appendParent(body []byte, newRoot int) ([]byte, error) {
 // mergePDFFiles merges at the PDF object level. Work is only done on invocation;
 // there are no temporary helpers, network calls, installer, or runtime dependencies.
 func mergePDFFiles(inputs []string, output string) (int, error) {
-	if len(inputs) < 2 {
-		return 0, errors.New("至少需要 2 份 PDF")
-	}
-	destAbs, e := filepath.Abs(output)
-	if e != nil {
-		return 0, e
-	}
-	docs := make([]*pdfInput, 0, len(inputs))
-	pages := 0
-	for _, f := range inputs {
-		abs, e := filepath.Abs(f)
-		if e != nil {
-			return 0, e
-		}
-		if strings.EqualFold(abs, destAbs) {
-			return 0, errors.New("輸出檔不可與來源 PDF 相同")
-		}
-		doc, e := parsePDF(f)
-		if e != nil {
-			return 0, fmt.Errorf("%s：%w", filepath.Base(f), e)
-		}
-		if pages+doc.count > 100000 {
-			return 0, errors.New("總頁數超出 100,000 頁上限")
-		}
-		pages += doc.count
-		docs = append(docs, doc)
-	}
-	return mergePDFDocuments(docs, output)
+    if len(inputs)<2{return 0,errors.New("至少需要 2 份 PDF")}
+    destAbs,err:=filepath.Abs(output)
+    if err!=nil{return 0,err}
+    for _,f:=range inputs{
+        abs,e:=filepath.Abs(f)
+        if e!=nil{return 0,e}
+        if strings.EqualFold(abs,destAbs){return 0,errors.New("輸出檔不可與來源 PDF 相同")}
+    }
+    stream,err:=newPDFStreamMerge(output)
+    if err!=nil{return 0,err}
+    defer stream.abort()
+    for _,file:=range inputs {
+        doc,e:=parsePDF(file)
+        if e!=nil{return 0,fmt.Errorf("%s：%w",filepath.Base(file),e)}
+        if e=stream.appendPDF(doc);e!=nil{return 0,fmt.Errorf("%s：%w",filepath.Base(file),e)}
+        // doc no longer survives this iteration: release its PDF streams and
+        // object map before parsing the next input document.
+    }
+    return stream.commit()
 }
 
 // mergePDFDocuments writes already-parsed PDFs. It avoids reading input PDFs
