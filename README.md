@@ -1,62 +1,61 @@
-# 公文 PDF 快合｜Win32 原生免安裝工具
+# 公文 PDF 快合｜v1.7.0 離線 NDC ODF 轉檔版
 
-針對 Windows 10／11（x64）公務電腦設計的獨立 PDF 合併工具。
+適用 Windows 10／11（x64）的 Win32 原生、公文 ZIP 一鍵合併工具。
 
-## 系統需求與執行方式
+## 安裝需求
 
-- **原生 Win32 視窗**（傳統 Windows 按鈕、清單與開啟／儲存對話框）。
-- 產生單一約 2～3 MB 的 `公文PDF快合.exe`，**執行時不需要安裝 Go、Python、Java、.NET、套件或瀏覽器執行環境**。
-- PDF 和 ZIP 全程本機離線處理，不上傳公文內容。
-- EXE 未經程式碼簽章。機關電腦可能因應用程式控管政策禁止執行；須由資訊管理單位依法規與機關程序審核，請勿繞過管制。
-- 開發／重新建置在 GitHub Actions 上進行；**公務電腦只下載已建置的 EXE**。
+- 主程式為單一免安裝的 `OfficialPDFMerge.exe`，不需要 Python、Go、Java、.NET 或網路。
+- **可編輯文件轉檔需要事先安裝 NDC ODF Application Tools 3.3.3（x64）**。預設查找：
+  `C:\Program Files\NDC ODF Application Tools\program\soffice.com`
+- 本版**不使用 Microsoft Office COM、不啟動 PowerShell**，不再包含原有 COM 轉檔模組。
+- 公文與附件一律在本機處理，不上傳雲端，也不啟動本機 HTTP 服務。
+- 純 PDF 合併不需要 NDC ODF，也不會啟動轉檔程式。
 
-## 快速使用（v1.6.0）
+## 公文 ZIP 自動合併
 
-### 公文 ZIP（一鍵自動化）
+將公文 ZIP 拖入已開啟的程式，或拖到 EXE 圖示上：
 
-直接把公文 ZIP 拖進程式：分析 `來文` 主文、按照 `ATTCH1`、`ATTCH2` …… 數字順序排列附件，排除意見單、合併版及稿件。**不再跳出存檔對話框**，合併 PDF 自動存回 ZIP 同一資料夾，不覆寫原檔。
+1. 解析 `來文` 資料夾主文 PDF，依 `ATTCH1`、`ATTCH2` 等數字排序附件。
+2. 排除 opinion、(after)、(before)、合併版及稿件；遇到不支援的附件格式則報錯，不會默默省略附件。
+3. 純 PDF 附件採記憶體解析合併（預設 ZIP 內 PDF 合計不超過 96 MiB 時）。大型 PDF 才使用必要的暫存。
+4. 將 DOC／DOCX／DOCM／ODT／RTF／TXT、XLS／XLSX／XLSM／ODS／CSV／TSV、PPT／PPTX／PPTM／ODP 附件，以**一次 NDC ODF 背景批次轉檔**為 PDF，再依原 ATTCH 順序合併。
+5. 完成後自動存回 ZIP 所在目錄，檔名為「機關公文.pdf」或「機關公文及其附件.pdf」。可勾選完整日期與文號命名；檔名衝突時自動編號，不覆寫原檔。
 
-- **直接合併**：PDF。
-- **可編輯附件轉 PDF**：Word `DOC/DOCX/DOCM/ODT/RTF/TXT`、Excel `XLS/XLSX/XLSM/ODS/CSV/TSV`、PowerPoint `PPT/PPTX/PPTM/ODP`。
-- **轉檔引擎**：預設一律優先由已安裝的 Microsoft Office 執行轉檔，包括 ODT、ODS、ODP。Office 透過 Windows 原生 COM／IDispatch 介面直接轉換，**不再啟動 PowerShell、NDC ODF 命令列或其他外部轉檔指令**。已完全移除 NDC ODF 後備啟動流程。
-- **無法轉換即中止**：不會略過未知附件、副檔名或轉檔失敗的附件而假裝整份公文已完成。
-- **命名**：預設「機關公文.pdf」或「機關公文及其附件.pdf」；可勾選完整日期與文號命名，若有附件同樣在「號函」後面補上「及其附件」。無法辨識機關時使用「ZIP檔名_來文資料待確認.pdf」。
-- **轉檔效能**：純 PDF 公文不會啟動 Office；混合附件會等候本機 Word／Excel／PowerPoint 轉檔。首次啟動 Office 通常比純 PDF 慢。
-- **安全性**：轉檔設為唯讀，Office 巨集自動執行已停用；文件內容不會上傳網路。請注意 Office／ODF 格式轉換仍可能有排版差異，正式公文應核對轉出結果。
+轉換失敗、找不到轉檔程式、缺漏 PDF 或逾時時，停止合併並顯示錯誤，不會輸出刻意略過附件的「完成」檔案。
 
-### 一般文件合併（PDF、Office、ODF）
+## 一般文件合併
 
-**程式已開啟時**：加入或拖入 PDF、DOC、DOCX、ODT、XLSX、ODS、PPTX、ODP 等支援格式，在清單中人工拖曳、上移／下移排列，按「合併一般文件」，預設直接儲存第一份文件所在資料夾，檔名為「合併檔案.pdf」（同名時自動加編號）。若勾選「合併時開啟另存視窗」，才會顯示儲存位置與檔名選擇視窗。可編輯文件先轉成暫存 PDF，再依清單順序合併，不改動原檔。
+在程式內加入支援的 PDF 或可編輯文件，可調整順序、移除、清空，預設將「合併檔案.pdf」存至第一份文件所在資料夾。同名會加編號。勾選「合併時開啟另存視窗」時可自行選擇檔名和位置。
 
-**程式未開啟時**：直接選取多份文件並拖到 `OfficialPDFMerge.exe` 圖示，程式自動合併，**不顯示儲存對話框**。產生的 `合併檔案.pdf` 存於**第一份接收到的來源文件**所在資料夾，如已有相同檔名則依序產生 `合併檔案 (2).pdf` 等。不保證 Windows 傳遞多檔的順序等於桌面圖示順序；若順序有要求，應改用程式內的人工排序清單。
+也可將一組檔案直接拖入 EXE 圖示以自動產生合併檔；單獨一份可編輯文件直接拖入 EXE 時，會輸出相同基本檔名的 PDF。純 PDF 合併不建立不必要的 Office 工作資料夾。
 
-若單獨拖入一份可編輯文件到 EXE，則轉換為同目錄、相同基本檔名的 PDF；單獨一份 PDF 不執行合併。為測試人工清單，可使用 `--manual` 啟動參數搭配文件路徑。
+## NDC ODF 轉檔穩定性與隔離
 
-### 完成狀態
+- 固定查找已安裝的 `soffice.com`，執行 `--headless --convert-to pdf`，**不是透過 shell／PowerShell**。
+- 每次批次轉檔建立專用的 `UserInstallation` 設定檔，避免與使用者已開啟的 NDC ODF 共用設定檔；轉檔完成後清理本次暫存。這有助於降低設定檔鎖定衝突，但尚需在 NDC ODF 3.3.3 實機驗證。
+- 同一批附件僅啟動一次 NDC ODF，使用來源檔清單與輸出目標的對應表恢復原始排序。來源檔名相同時會另行暫存為不重複名稱。
+- 轉檔逾時設定為 2 分鐘＋每份附件 1 分鐘，最多 12 分鐘；若逾時或檔案缺漏，會清楚報錯。
+- 外部 PDF 輸出先檢查格式標頭，再交由現有 PDF 解析器確認頁數及合併能力。原始 ZIP 與來源文件不變動。
+- LibreOffice 系列轉檔引擎對 DOCX、XLSX、PPTX 的輸出格式可能與 Microsoft Office 有排版差異；尤其 Excel/Calc 列印範圍、CSV 編碼、中文字型、巨集文件與外部連結必須自行核對。
 
-底部狀態欄固定單行、截斷過長的文字，成功時只顯示檔案名稱，不直接塞入完整路徑，避免文字擠壓重疊。
+## 版本驗證範圍
 
-### 圖示與視覺介面
+GitHub Windows Actions 已納入單元測試、NDC ODF 指令及獨立設定檔 URI 測試、模擬 NDC 批次轉換（包括同名文件與缺漏轉檔結果）、ZIP 附件順序、PDF 合併位元組一致性、原生 GUI 啟動及手動清單操作測試。
 
-原生 Win32 極簡風格，淺色卡片與重點藍色操作區；應用程式圖示已嵌入單一 EXE。啟動時不需要瀏覽器核心、網路連線或新增使用者端套件。Office 轉檔由 EXE 直接使用 Windows COM API，沒有額外 PowerShell 主控台或轉檔子命令列。未變更防毒程式、監控或執行政策。
+**GitHub Windows 執行環境不含公務電腦上的 NDC ODF**。真實的 NDC ODF 3.3.3 轉檔、ODT／DOCX／XLSX／PPTX 排版，以及 `bootstrap.ini` 警告是否改善，仍須於已安裝的電腦實測。
 
-### v1.6.1：減少磁碟讀寫（維護版）
+你已透過 CMD 實測 NDC ODF 3.3.3 可將 TXT、ODT 匯出為 PDF，但尚未實測新版 EXE 與 NDC 的聯動。
 
-- 純 PDF 公文 ZIP（PDF 未超過預設合計 96 MiB 記憶體額度）：直接解壓至記憶體並解析 PDF 物件，**不再逐件寫入暫存 PDF 檔案**。
-- 超過記憶體額度的大型 PDF：保留受控的磁碟暫存路徑，避免在較舊電腦耗盡記憶體。
-- 混有 DOCX／ODT／XLSX／PPTX 等 Office 文件：**只針對需要轉檔的項目**建立暫存來源與轉檔結果 PDF。轉檔仍使用既有 Microsoft Office COM；沒有移除必要的來源文件暫存步驟。
-- 一般 PDF-only 手動合併：不再無條件建立工作資料夾。
-- 多份 PDF 的最終輸出仍先寫入**同一目錄的單一暫存結果檔案**，寫入完成後才重新命名，保留防止部分寫出、輸出毀損的保護。
-- 回歸測試確認純 PDF 無解壓工作資料夾、單一主文保留位元組、附件順序／頁數正確、Office 文件轉檔失敗不留下輸出 PDF。
-- **這是正常的效能與資料完整性優化，不是 Apex One 的偵測排除措施。** 防毒仍可能對未簽章檔案或其他操作發出警示。
+## 程式碼及資安
 
-### 驗證範圍
+- 以 Go 標準函式庫、Win32 API 開發；不需要下載執行階段或套件。
+- PDF 合併會先寫入輸出目錄內的暫存結果，再於成功時正式命名，以免留下部分輸出的公文 PDF。
+- `OfficialPDFMerge.exe` 尚未具備受信任的程式碼簽章。Trend Micro Apex One 仍可能直接以機器學習或行為監控攔截 EXE；**改用 NDC ODF 不能保證解除偵測，也不會改動 Apex One 的設定**。
+- 如發生偵測，保留警示類型、時間與 SHA-256，使用固定版本向 Trend Micro 查證是否為誤判。不要停用或規避防毒監控。
+- PDF 合併不保證保留數位簽章效力、書籤、互動表單及 PDF 附件，正式公文請核對結果。
+- 測試文件全為合成資料，不在 GitHub 存放真實公文。
 
-GitHub CI 驗證 PDF 合併核心、模擬 ODT/DOCX/PPTX 附件篩選排序與合併、ZIP 一鍵模式及 Windows 按鈕回應。GitHub Windows Runner 使用 Windows COM 元件驗證 VARIANT／BSTR／IDispatch 介面呼叫，但**未安裝 Office**，因此 Word／Excel／PowerPoint 的實際轉 PDF 仍須於已安裝 Office 的公務電腦上核對。
-
-## 編譯
-
-採 **純 Go 標準函式庫 + Win32 API**（呼叫 Windows 系統內建 DLL），沒有外部依賴。
+## 開發建置（一般使用者無須操作）
 
 ```powershell
 go test ./...
@@ -65,27 +64,3 @@ $env:GOARCH="amd64"
 $env:CGO_ENABLED="0"
 go build -trimpath -ldflags="-H=windowsgui -s -w" -o "公文PDF快合.exe" .
 ```
-
-編譯作業由 GitHub Actions 執行，終端使用者不用在電腦上執行這些命令。
-
-## 機關端資安審查
-
-本工具為自行編譯且未具組織憑證數位簽章的 EXE；在 Trend Micro Apex One 或其他端點安全產品下，Office COM 自動化以及未經程式碼簽章的自製 EXE 仍可能觸發行為監控。**不再使用 PowerShell 並不代表取得資安核准，也不能保證程式不被封鎖。**
-
-- 若監控跳出「發現安全威脅／違規」，請保留警示畫面、檢出類型、動作、偵測程序路徑和時間。
-- 以 GitHub Actions 建置紀錄和 EXE 的 SHA-256 雜湊提供資訊人員核對；由機關依核准程序決定是否允許執行、簽章或採其他既有核准方式。
-- 請勿關閉防毒、修改排除清單或以規避方式繞過阻擋。若 Office 轉檔被政策封鎖，應停止使用該功能並交由資訊人員評估。
-
-## 注意
-
-- PDF 合併不保證保留數位簽章效力、互動表單、書籤與 PDF 內嵌附件，請保留來源檔，重要公務文件須核對輸出。
-- 自動命名依可擷取文字層解析；影像式 PDF 或特殊編碼會使用「來文資料待確認」的檔名，請使用者核對。
-- PDF 合併器偏重效率而非涵蓋所有 PDF 格式；若遇到無法支援的輸入，會停止合併並回報錯誤。
-- 專案中的測試 PDF 均為合成資料，不包含實際公文內容。
-- GitHub Windows Runner 驗證 EXE 啟動、公文 ZIP 自動輸出、混合格式合併核心（使用模擬轉檔器）、人工清單與直接拖檔到 EXE 的自動輸出。Office／ODF 轉換仍須於實際有安裝 Office 的公務電腦驗證。
-
-## 來源檔案與授權
-
-Windows 入口為 `main_windows.go`，主文解析為 `lettertext.go`，公文 ZIP 規則為 `zipmerge.go`，PDF 合併核心為 `pdfmerge.go`。
-
-程式僅供依機關資訊安全政策核可後使用。
