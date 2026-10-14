@@ -86,18 +86,18 @@ jobs:
           name: OfficialPDFMerge-win64
           path: 公文PDF快合.exe
           if-no-files-found: error
-      - name: Publish portable EXE release v1.6.0
+      - name: Publish portable EXE release v1.6.1
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           Copy-Item -LiteralPath "公文PDF快合.exe" -Destination "OfficialPDFMerge.exe" -Force
-          gh release view v1.6.0 --json tagName *> $null
+          gh release view v1.6.1 --json tagName *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload v1.6.0 "OfficialPDFMerge.exe" --clobber
+            gh release upload v1.6.1 "OfficialPDFMerge.exe" --clobber
           } else {
-            gh release create v1.6.0 "OfficialPDFMerge.exe" --target main --title "公文 PDF 快合 v1.6.0" --notes "Win32 原生 COM 版：Office 文件直接以 Windows IDispatch 與已安裝 Word、Excel、PowerPoint 轉換，不啟動 PowerShell、soffice 或其他命令列。保留 ZIP 一鍵處理、完整文號附件命名及手動同資料夾輸出。安全產品是否允許執行仍由機關核可。" --latest
+            gh release create v1.6.1 "OfficialPDFMerge.exe" --target main --title "公文 PDF 快合 v1.6.1" --notes "維護版：一般大小的純 PDF 公文 ZIP 改在記憶體中解析及合併，免逐件解壓暫存；僅 Office 轉檔及大型文件需要工作資料夾。維持單一 EXE、原有命名排序及 COM 轉檔。保留安全的同目錄暫存輸出後正式命名。不以效能調整取代端點安全驗證。" --latest
           }
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed" }
       - name: Check in extracted source files and remove bootstrap archive
