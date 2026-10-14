@@ -1,7 +1,7 @@
 name: Build standalone Win32 EXE
 on:
   push:
-    branches: [main]
+    branches: [maintenance/v1.6.2-office]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -86,31 +86,17 @@ jobs:
           name: OfficialPDFMerge-win64
           path: 公文PDF快合.exe
           if-no-files-found: error
-      - name: Publish portable EXE release v1.6.1
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Publish portable EXE release v1.6.2
+        if: github.event_name == 'push' && github.ref == 'refs/heads/maintenance/v1.6.2-office' && contains(github.event.head_commit.message, 'release: v1.6.2')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           Copy-Item -LiteralPath "公文PDF快合.exe" -Destination "OfficialPDFMerge.exe" -Force
-          gh release view v1.6.1 --json tagName *> $null
+          gh release view v1.6.2 --json tagName *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload v1.6.1 "OfficialPDFMerge.exe" --clobber
+            gh release upload v1.6.2 "OfficialPDFMerge.exe" --clobber
           } else {
-            gh release create v1.6.1 "OfficialPDFMerge.exe" --target main --title "公文 PDF 快合 v1.6.1" --notes "維護版：一般大小的純 PDF 公文 ZIP 改在記憶體中解析及合併，免逐件解壓暫存；僅 Office 轉檔及大型文件需要工作資料夾。維持單一 EXE、原有命名排序及 COM 轉檔。保留安全的同目錄暫存輸出後正式命名。不以效能調整取代端點安全驗證。" --latest
+            gh release create v1.6.2 "OfficialPDFMerge.exe" --target maintenance/v1.6.2-office --latest=false --title "公文 PDF 快合 v1.6.2" --notes "維護版：一般大小的純 PDF 公文 ZIP 改在記憶體中解析及合併，免逐件解壓暫存；僅 Office 轉檔及大型文件需要工作資料夾。維持單一 EXE、原有命名排序及 COM 轉檔。保留安全的同目錄暫存輸出後正式命名。不以效能調整取代端點安全驗證。" --latest
           }
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed" }
-      - name: Check in extracted source files and remove bootstrap archive
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        shell: pwsh
-        run: |
-          if (Test-Path 'bootstrap/source.00.txt') {
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add -- .gitignore go.mod main_windows.go cli.go lettertext.go pdfmerge.go zipmerge.go pdfmerge_test.go zipmerge_test.go testdata/sample0.pdf
-            git rm -r -- bootstrap
-            git commit -m 'feat: publish native Win32 PDF merger source and tests'
-            if ($LASTEXITCODE -ne 0) { throw 'Git commit failed' }
-            git push origin HEAD:main
-            if ($LASTEXITCODE -ne 0) { throw 'Git push failed' }
-          }
