@@ -35,33 +35,44 @@ jobs:
             throw 'Office macros must be disabled during conversion'
           }
           Write-Output 'PASS: bridge only talks to locally installed Microsoft Office'
+      - name: Smoke test Windows Script Host bridge request handling
+        shell: pwsh
+        run: |
+          $job = 'OfficeBridgeData/jobs/j00000000000000000000000000000001'
+          New-Item -ItemType Directory -Force -Path "$job/input", "$job/output" | Out-Null
+          [System.IO.File]::WriteAllText((Join-Path $job 'request.txt'), "0000.exe`r`n", [System.Text.Encoding]::ASCII)
+          & "$env:SystemRoot/System32/cscript.exe" //nologo "OfficeBridge.vbs" --once
+          if ($LASTEXITCODE -ne 0) { throw "VBScript bridge did not compile or start (code $LASTEXITCODE)" }
+          $res = (Get-Content -Raw "$job/result.txt").Trim()
+          if ($res -ne 'ERROR|INVALID_EXTENSION_OR_NAME') { throw "Unexpected local bridge result: $res" }
+          Write-Output 'PASS: real Windows cscript parsed OfficeBridge.vbs and returned a detailed local error'
       - name: Package complete offline distribution
         shell: pwsh
         run: |
           $dist = Join-Path $pwd 'dist'
           New-Item -ItemType Directory -Force -Path "$dist\vendor", "$dist\OfficeBridgeData\jobs", "$dist\licenses" | Out-Null
-          Copy-Item 'index.html','app.js','OfficeBridge.vbs','啟動 Office 橋接.cmd','README.md' $dist
+          Copy-Item 'index.html','app.js','header.js','OfficeBridge.vbs','啟動 Office 橋接.cmd','README.md' $dist
           Copy-Item 'node_modules/jszip/dist/jszip.min.js' "$dist\vendor\jszip.min.js"
           Copy-Item 'node_modules/pdf-lib/dist/pdf-lib.min.js' "$dist\vendor\pdf-lib.min.js"
           Copy-Item 'node_modules/pdf-lib/LICENSE.md' "$dist\licenses\pdf-lib-LICENSE.md"
           Copy-Item 'node_modules/jszip/LICENSE.markdown' "$dist\licenses\jszip-LICENSE.markdown"
-          $expected = @('index.html','app.js','OfficeBridge.vbs','啟動 Office 橋接.cmd','README.md','vendor/jszip.min.js','vendor/pdf-lib.min.js')
+          $expected = @('index.html','app.js','header.js','OfficeBridge.vbs','啟動 Office 橋接.cmd','README.md','vendor/jszip.min.js','vendor/pdf-lib.min.js','vendor/pdf.min.js','vendor/pdf.worker.min.js')
           foreach ($file in $expected) {
             if (-not (Test-Path (Join-Path $dist $file))) { throw "Missing $file" }
           }
-          Compress-Archive -Path "$dist\*" -DestinationPath 'OfficePDFMerge-HTML-Office-v0.1.0.zip' -CompressionLevel Optimal
-          Get-FileHash 'OfficePDFMerge-HTML-Office-v0.1.0.zip' -Algorithm SHA256
+          Compress-Archive -Path "$dist\*" -DestinationPath 'OfficePDFMerge-HTML-Office-v0.2.0.zip' -CompressionLevel Optimal
+          Get-FileHash 'OfficePDFMerge-HTML-Office-v0.2.0.zip' -Algorithm SHA256
       - name: Upload testable complete zip
         uses: actions/upload-artifact@v4
         with:
-          name: OfficePDFMerge-HTML-Office-v0.1.0
-          path: html-office-prototype/OfficePDFMerge-HTML-Office-v0.1.0.zip
+          name: OfficePDFMerge-HTML-Office-v0.2.0
+          path: html-office-prototype/OfficePDFMerge-HTML-Office-v0.2.0.zip
           if-no-files-found: error
       - name: Publish prototype release after full tests
-        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'release-html-office-v0.1.0')
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'release-html-office-v0.2.0')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create html-office-v0.1.0 "OfficePDFMerge-HTML-Office-v0.1.0.zip" --target prototype/html-office-bridge --title "公文 PDF 快合 HTML × Office 原型 v0.1.0" --notes "離線原型：Edge HTML／JSZip／pdf-lib；Windows Script Host橋接已安裝的Word、Excel、PowerPoint之COM匯出PDF。無自行編譯EXE、不使用CDN或伺服器；需允許執行機關核可的本機腳本。尚未完成有Office的實機端對端測試，且不保證Apex One不會攔截；先以非機密測試文件驗證。" --latest=false
+          gh release create html-office-v0.2.0 "OfficePDFMerge-HTML-Office-v0.2.0.zip" --target prototype/html-office-bridge --title "公文 PDF 快合 HTML × Office 原型 v0.2.0" --notes "HTML／Office診斷改良版：增加拖曳加入ZIP或檔案、手動調序、PDF.js離線辨識來文機關日期字號，新增OfficeBridge.vbs分階段進度與錯誤碼、腳本連線測試及Windows cscript測試。Microsoft Office真實轉檔尚未實機完成驗證，不保證Apex One允許；先用無機密測試文件。" --latest=false
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
