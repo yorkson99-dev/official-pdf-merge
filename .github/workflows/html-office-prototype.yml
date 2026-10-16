@@ -65,6 +65,9 @@ jobs:
           }
           Compress-Archive -Path "$dist\*" -DestinationPath 'OfficePDFMerge-HTML-Office-v0.2.0.zip' -CompressionLevel Optimal
           Get-FileHash 'OfficePDFMerge-HTML-Office-v0.2.0.zip' -Algorithm SHA256
+      - name: Real Microsoft Edge offline browser smoke test
+        shell: pwsh
+        run: node smoke-browser.js
       - name: Upload testable complete zip
         uses: actions/upload-artifact@v4
         with:
