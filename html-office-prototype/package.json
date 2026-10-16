@@ -5,11 +5,15 @@
   "license": "UNLICENSED",
   "description": "Offline HTML/Office COM bridge prototype",
   "scripts": {
-    "test": "node --check app.js && node --check header.js && node smoke-test.js"
+    "test": "node --check app.js && node --check header.js && node smoke-test.js",
+    "test:browser": "node smoke-browser.js"
   },
   "dependencies": {
     "jszip": "3.10.1",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "3.11.174"
+  },
+  "devDependencies": {
+    "playwright-core": "1.56.1"
   }
 }
