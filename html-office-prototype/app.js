@@ -282,7 +282,28 @@ async function addFiles(files){
   info("已加入"+arr.length+"份文件，排序後可開始合併。");
 }
 function wireUI(){
-  by("zipFile").addEventListener("change",e=>{inspect(e.target.files[0]);});
+  by("zipFile").addEventListener("change",e=>{inspect(e.target.files[0]);e.target.value="";});
+  by("filesInput").addEventListener("change",async e=>{
+    try{await addFiles(e.target.files);}catch(err){info(err.message||String(err),true);}
+    finally{e.target.value="";}
+  });
+  const zone=by("dropZone");
+  let dragDepth=0;
+  zone.addEventListener("dragenter",event=>{event.preventDefault();dragDepth++;zone.classList.add("dragover");});
+  zone.addEventListener("dragover",event=>{event.preventDefault();event.dataTransfer.dropEffect="copy";});
+  zone.addEventListener("dragleave",event=>{event.preventDefault();dragDepth=Math.max(0,dragDepth-1);if(dragDepth===0)zone.classList.remove("dragover");});
+  zone.addEventListener("drop",async event=>{
+    event.preventDefault();dragDepth=0;zone.classList.remove("dragover");
+    if(state.merging)return;
+    try{await addFiles(event.dataTransfer.files);}catch(err){info(err.message||String(err),true);}
+  });
+  by("clearFiles").addEventListener("click",()=>{
+    state.archive=null;state.ordered=[];state.ready=null;state.header=null;state.mode="";
+    by("headerInfo").textContent="尚未辨識。";
+    by("save").disabled=true;renderEntries();refreshDefaultName();info("清單已清空。");
+  });
+  by("detailedName").addEventListener("change",refreshDefaultName);
+
   by("connect").addEventListener("click",async()=>{
     if(!window.showDirectoryPicker){
       by("bridgeState").textContent="Edge未提供資料夾存取API；請確認瀏覽器及執行政策";
@@ -332,6 +353,6 @@ function wireUI(){
     setTimeout(()=>URL.revokeObjectURL(url),30000);
   });
 }
-if(typeof module!=="undefined"&&module.exports)module.exports={parseZipEntries,safeName,isExcluded,extension,mergePdfDocuments};
+if(typeof module!=="undefined"&&module.exports)module.exports={parseZipEntries,safeName,isExcluded,extension,mergePdfDocuments,fileBytes,friendlyBridgeError};
 if(typeof document!=="undefined")wireUI();
 })();
