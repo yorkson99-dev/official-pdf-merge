@@ -124,8 +124,8 @@ async function callOfficeBridge(ordered){
   }
 }
 async function mergePdfDocuments(ordered,converted,onProgress){
-  if(!window.PDFLib)throw Error("無法載入pdf-lib：請使用完整離線發行壓縮檔");
-  const target=await PDFLib.PDFDocument.create();
+  if(!globalThis.PDFLib)throw Error("無法載入pdf-lib：請使用完整離線發行壓縮檔");
+  const target=await globalThis.PDFLib.PDFDocument.create();
   let allPages=0;
   for(let i=0;i<ordered.length;i++){
     const item=ordered[i];
@@ -134,7 +134,7 @@ async function mergePdfDocuments(ordered,converted,onProgress){
     if(!bytes)throw Error("缺少Office轉檔結果："+item.name);
     if(bytes.length>MAX_ITEM)throw Error("單份PDF超過200 MiB限制："+item.name);
     let pdf;
-    try{pdf=await PDFLib.PDFDocument.load(bytes,{updateMetadata:false});}
+    try{pdf=await globalThis.PDFLib.PDFDocument.load(bytes,{updateMetadata:false});}
     catch(e){throw Error("無法解析PDF「"+item.name+"」："+String(e.message||e))}
     const pages=pdf.getPageIndices();
     allPages+=pages.length;
@@ -226,6 +226,6 @@ function wireUI(){
     setTimeout(()=>URL.revokeObjectURL(url),30000);
   });
 }
-if(typeof module!=="undefined"&&module.exports)module.exports={parseZipEntries,safeName,isExcluded,extension};
+if(typeof module!=="undefined"&&module.exports)module.exports={parseZipEntries,safeName,isExcluded,extension,mergePdfDocuments};
 if(typeof document!=="undefined")wireUI();
 })();
