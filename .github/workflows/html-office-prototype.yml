@@ -46,6 +46,14 @@ jobs:
           $res = (Get-Content -Raw "$job/result.txt").Trim()
           if ($res -ne 'ERROR|INVALID_EXTENSION_OR_NAME') { throw "Unexpected local bridge result: $res" }
           Write-Output 'PASS: real Windows cscript parsed OfficeBridge.vbs and returned a detailed local error'
+          $ping = 'OfficeBridgeData/jobs/j00000000000000000000000000000002'
+          New-Item -ItemType Directory -Force -Path "$ping/input", "$ping/output" | Out-Null
+          [System.IO.File]::WriteAllText((Join-Path $ping 'request.txt'), "", [System.Text.Encoding]::ASCII)
+          & "$env:SystemRoot/System32/cscript.exe" //nologo "OfficeBridge.vbs" --once
+          if ($LASTEXITCODE -ne 0) { throw "Bridge ping crashed" }
+          $health = (Get-Content -Raw "$ping/result.txt").Trim()
+          if ($health -ne 'DONE') { throw "Empty bridge ping should return DONE, got: $health" }
+          Write-Output 'PASS: empty HTML-to-Office bridge handshake returned DONE'
       - name: Package complete offline distribution
         shell: pwsh
         run: |
