@@ -3,7 +3,8 @@ const assert=require("node:assert/strict");
 const JSZip=require("jszip");
 const {PDFDocument}=require("pdf-lib");
 globalThis.PDFLib={PDFDocument};
-const {parseZipEntries,mergePdfDocuments,safeName,isExcluded}=require("./app.js");
+const {parseZipEntries,mergePdfDocuments,safeName,isExcluded,fileBytes,friendlyBridgeError}=require("./app.js");
+const {extractHeaderFromLines,groupTextItems}=require("./header.js");
 
 async function makePDF(width){
   const pdf=await PDFDocument.create();
@@ -12,6 +13,27 @@ async function makePDF(width){
 }
 async function run(){
   assert.equal(safeName("a<b>.pdf"),"ab.pdf");
+  const header=extractHeaderFromLines([
+    "臺北市政府地政局  函",
+    "受文者：○○地政事務所",
+    "發文日期：中華民國115年10月16日",
+    "發文字號：北市地測字第1156012345號",
+    "主旨：本案測試",
+  ]);
+  assert.deepEqual(header,{
+    agency:"臺北市政府地政局",kind:"函",
+    date:"115年10月16日",documentNo:"北市地測字第1156012345號"
+  });
+  const rows=groupTextItems([
+    {str:"臺北市政府地政局",transform:[1,0,0,1,100,700]},
+    {str:"函",transform:[1,0,0,1,220,700]},
+    {str:"發文日期：115年10月16日",transform:[1,0,0,1,100,660]}
+  ]);
+  assert.match(rows[0],/臺北市政府地政局.*函/);
+  assert.match(friendlyBridgeError("ERROR|WORD_OPEN|0001.odt|-2147221005"),/Word開啟文件失敗.*0001.odt.*-2147221005/);
+  const fake={name:"appended.pdf",file:{arrayBuffer:async()=>new Uint8Array([37,80,68,70]).buffer}};
+  assert.equal((await fileBytes(fake))[0],37);
+  console.log("PASS: official agency/date/number extraction and precise Office COM diagnostics");
   assert.equal(isExcluded("x(opinion).pdf"),true);
   const zip=new JSZip();
   zip.file("來文/115_11_ATTCH10.pdf",await makePDF(350));
