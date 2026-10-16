@@ -1,0 +1,67 @@
+name: Build offline HTML and Office bridge prototype
+on:
+  push:
+    branches: [prototype/html-office-bridge]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  package:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: html-office-prototype
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install fixed library versions
+        shell: pwsh
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Offline ZIP and PDF merge unit tests
+        shell: pwsh
+        run: npm test
+      - name: Verify Windows Script Host bridge has no shell, network or PowerShell dependence
+        shell: pwsh
+        run: |
+          $src = Get-Content -Raw 'OfficeBridge.vbs'
+          if ($src -match 'powershell|XMLHTTP|WinHttp|https?:|Shell[.]Execute|WScript[.]Shell[.]Run') {
+            throw 'Unexpected external network or shell execution in Office bridge'
+          }
+          if ($src -notmatch 'AutomationSecurity=3') {
+            throw 'Office macros must be disabled during conversion'
+          }
+          Write-Output 'PASS: bridge only talks to locally installed Microsoft Office'
+      - name: Package complete offline distribution
+        shell: pwsh
+        run: |
+          $dist = Join-Path $pwd 'dist'
+          New-Item -ItemType Directory -Force -Path "$dist\vendor", "$dist\OfficeBridgeData\jobs", "$dist\licenses" | Out-Null
+          Copy-Item 'index.html','app.js','OfficeBridge.vbs','啟動 Office 橋接.cmd','README.md' $dist
+          Copy-Item 'node_modules/jszip/dist/jszip.min.js' "$dist\vendor\jszip.min.js"
+          Copy-Item 'node_modules/pdf-lib/dist/pdf-lib.min.js' "$dist\vendor\pdf-lib.min.js"
+          Copy-Item 'node_modules/pdf-lib/LICENSE.md' "$dist\licenses\pdf-lib-LICENSE.md"
+          Copy-Item 'node_modules/jszip/LICENSE.markdown' "$dist\licenses\jszip-LICENSE.markdown"
+          $expected = @('index.html','app.js','OfficeBridge.vbs','啟動 Office 橋接.cmd','README.md','vendor/jszip.min.js','vendor/pdf-lib.min.js')
+          foreach ($file in $expected) {
+            if (-not (Test-Path (Join-Path $dist $file))) { throw "Missing $file" }
+          }
+          Compress-Archive -Path "$dist\*" -DestinationPath 'OfficePDFMerge-HTML-Office-v0.1.0.zip' -CompressionLevel Optimal
+          Get-FileHash 'OfficePDFMerge-HTML-Office-v0.1.0.zip' -Algorithm SHA256
+      - name: Upload testable complete zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: OfficePDFMerge-HTML-Office-v0.1.0
+          path: html-office-prototype/OfficePDFMerge-HTML-Office-v0.1.0.zip
+          if-no-files-found: error
+      - name: Publish prototype release after full tests
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, 'release-html-office-v0.1.0')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create html-office-v0.1.0 "OfficePDFMerge-HTML-Office-v0.1.0.zip" --target prototype/html-office-bridge --title "公文 PDF 快合 HTML × Office 原型 v0.1.0" --notes "離線原型：Edge HTML／JSZip／pdf-lib；Windows Script Host橋接已安裝的Word、Excel、PowerPoint之COM匯出PDF。無自行編譯EXE、不使用CDN或伺服器；需允許執行機關核可的本機腳本。尚未完成有Office的實機端對端測試，且不保證Apex One不會攔截；先以非機密測試文件驗證。" --latest=false
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
