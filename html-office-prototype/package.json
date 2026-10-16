@@ -1,14 +1,15 @@
 {
   "name": "official-pdf-html-office-prototype",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "UNLICENSED",
   "description": "Offline HTML/Office COM bridge prototype",
   "scripts": {
-    "test": "node --check app.js && node smoke-test.js"
+    "test": "node --check app.js && node --check header.js && node smoke-test.js"
   },
   "dependencies": {
     "jszip": "3.10.1",
-    "pdf-lib": "1.17.1"
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "3.11.174"
   }
 }
