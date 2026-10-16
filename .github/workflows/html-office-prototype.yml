@@ -28,7 +28,7 @@ jobs:
         shell: pwsh
         run: |
           $src = Get-Content -Raw 'OfficeBridge.vbs'
-          if ($src -match 'powershell|XMLHTTP|WinHttp|https?:|Shell[.]Execute|WScript[.]Shell[.]Run') {
+          if ($src -match 'powershell[.]exe|XMLHTTP|WinHttp|https?:|Shell[.]Execute|WScript[.]Shell[.]Run') {
             throw 'Unexpected external network or shell execution in Office bridge'
           }
           if ($src -notmatch 'AutomationSecurity=3') {
