@@ -99,6 +99,26 @@ async function readJobText(dir,filename){
   try{const h=await dir.getFileHandle(filename);return (await (await h.getFile()).text()).trim();}
   catch(e){if(e.name==="NotFoundError")return "";throw e;}
 }
+async function probeOfficeBridge(){
+  if(!state.bridge)throw Error("尚未選擇OfficeBridgeData資料夾");
+  const jobs=await state.bridge.getDirectoryHandle("jobs",{create:true});
+  const id="j"+crypto.randomUUID().replace(/-/g,"");
+  const job=await jobs.getDirectoryHandle(id,{create:true});
+  await job.getDirectoryHandle("input",{create:true});
+  await job.getDirectoryHandle("output",{create:true});
+  await writeFileHandle(job,"request.txt",new Uint8Array([]));
+  const start=Date.now();
+  while(Date.now()-start<9000){
+    await pause(350);
+    const result=await readJobText(job,"result.txt");
+    if(result){
+      await jobs.removeEntry(id,{recursive:true});
+      if(result!=="DONE")throw Error(friendlyBridgeError(result));
+      return true;
+    }
+  }
+  throw Error("9秒內未收到橋接器回覆。請檢查「啟動 Office 橋接.cmd」視窗是否顯示VBScript錯誤，以及資料夾是否選對。");
+}
 async function callOfficeBridge(ordered){
   if(!state.bridge)throw Error("尚未連線：請先選擇OfficeBridgeData資料夾");
   const jobName="j"+crypto.randomUUID().replace(/-/g,"");
@@ -214,11 +234,11 @@ function refreshDefaultName(){
           (state.ordered.length>1?"及其附件":""))+".pdf";
       }else name=safeName(agency+"公文"+(state.ordered.length>1?"及其附件":""))+".pdf";
     }else{
-      const stem=safeName((state.archive?.name||"公文").replace(/\\.zip$/i,""));
+      const stem=safeName((state.archive?.name||"公文").replace(/\.zip$/i,""));
       name=stem+"_來文資料待確認.pdf";
     }
   }else if(state.ordered.length===1){
-    name=safeName(state.ordered[0].name.replace(/\\.[^.]+$/,""))+".pdf";
+    name=safeName(state.ordered[0].name.replace(/\.[^.]+$/,""))+".pdf";
   }
   by("outputName").value=name;
 }
@@ -313,9 +333,12 @@ function wireUI(){
       const h=await showDirectoryPicker({mode:"readwrite",id:"official-pdf-bridge"});
       if(h.name!=="OfficeBridgeData")throw Error("請選擇套件內的OfficeBridgeData資料夾");
       await h.getDirectoryHandle("jobs",{create:true});
-      state.bridge=h;by("bridgeState").textContent="已連接本機橋接資料夾（不代表轉檔腳本已啟動）";
+      state.bridge=h;by("bridgeState").textContent="已連接資料夾，正在檢查橋接器是否啟動……";
+      by("bridgeState").className="hint";
+      await probeOfficeBridge();
+      by("bridgeState").textContent="連線測試成功：Office橋接器已啟動";
       by("bridgeState").className="ok";
-    }catch(e){if(e.name!=="AbortError"){by("bridgeState").textContent=e.message;by("bridgeState").className="error";}}
+    }catch(e){if(e.name!=="AbortError"){by("bridgeState").textContent=e.message;by("bridgeState").className="error";info(e.message||String(e),true);}}
   });
   by("merge").addEventListener("click",async()=>{
     if(!state.ordered.length)return;
@@ -353,6 +376,6 @@ function wireUI(){
     setTimeout(()=>URL.revokeObjectURL(url),30000);
   });
 }
-if(typeof module!=="undefined"&&module.exports)module.exports={parseZipEntries,safeName,isExcluded,extension,mergePdfDocuments,fileBytes,friendlyBridgeError};
+if(typeof module!=="undefined"&&module.exports)module.exports={parseZipEntries,safeName,isExcluded,extension,mergePdfDocuments,fileBytes,friendlyBridgeError,probeOfficeBridge};
 if(typeof document!=="undefined")wireUI();
 })();
