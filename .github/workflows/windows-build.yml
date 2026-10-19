@@ -1,7 +1,7 @@
 name: Build standalone Win32 EXE
 on:
   push:
-    branches: [maintenance/v1.6.1-mixed-warning]
+    branches: [maintenance/v1.6.1-ui-polish]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -61,13 +61,18 @@ jobs:
       - name: Embed Surveying Division developer attribution
         shell: pwsh
         run: ./ci-embed-attribution.ps1
+      - name: Embed Windows Common Controls v6 manifest
+        shell: pwsh
+        run: ./ci-embed-manifest.ps1
       - name: Verify developer attribution and toggle resource
         shell: pwsh
         run: |
           $source=Get-Content -Raw -Encoding UTF8 main_windows.go
           if ($source -notmatch '臺北市政府地政局測繪科開發') { throw 'Missing UI developer attribution' }
           if ($source -notmatch 'ID_MIXED_WARNING') { throw 'Missing warning toggle' }
-          if ($source -notmatch 'MB_DEFBUTTON2') { throw 'Risk dialog must default to stop' }
+          if (-not (Test-Path ui_taskdialog_windows.go)) {throw 'Missing modern TaskDialog'}
+          $dialog=Get-Content -Raw ui_taskdialog_windows.go
+          if ($dialog -notmatch 'taskDialogStop') {throw 'Missing default-stop native TaskDialog'}
           $v=[System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path '公文PDF快合.exe').Path)
           if ($v.CompanyName -ne '臺北市政府地政局測繪科') {throw 'Metadata CompanyName mismatch'}
           if ($v.Comments -ne '臺北市政府地政局測繪科開發') {throw 'Metadata Comments mismatch'}
@@ -94,6 +99,9 @@ jobs:
       - name: Manual sorted merge auto-save and optional Save As integration test
         shell: pwsh
         run: ./ci-manual-autosave-e2e.ps1
+      - name: Native progress and file-column UI integration test
+        shell: pwsh
+        run: ./ci-ui-polish-e2e.ps1
       - name: End-to-end safety prompt and persistent warning checkbox
         shell: pwsh
         run: ./ci-warning-e2e.ps1
@@ -103,12 +111,12 @@ jobs:
           name: OfficialPDFMerge-win64
           path: 公文PDF快合.exe
           if-no-files-found: error
-      - name: Publish portable EXE release v1.6.1 warning and attribution
-        if: github.event_name == 'push' && github.ref == 'refs/heads/maintenance/v1.6.1-mixed-warning' && contains(github.event.head_commit.message, 'release-v1.6.1-warning')
+      - name: Publish portable EXE release v1.6.1 interface polish
+        if: github.event_name == 'push' && github.ref == 'refs/heads/maintenance/v1.6.1-ui-polish' && contains(github.event.head_commit.message, 'release-v1.6.1-ui')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           Copy-Item -LiteralPath "公文PDF快合.exe" -Destination "OfficialPDFMerge.exe" -Force
-          gh release create v1.6.1-warning "OfficialPDFMerge.exe" --target maintenance/v1.6.1-mixed-warning --title "公文 PDF 快合 v1.6.1（混合多檔慎用警告＋測繪科署名）" --notes "完全以 v1.6.1 的 Microsoft Office COM 和 PDF 解析架構為基底。僅在實際合併檔案>3且含非PDF時，預設提示是否繼續（預設停止），可在主畫面關閉提醒並用HKCU記憶。純PDF合併不警示。EXE與GUI標註臺北市政府地政局測繪科開發。EXE仍未簽章，安全警告不能保證避免Apex One攔截。" --latest=false
+          gh release create v1.6.1-ui "OfficialPDFMerge.exe" --target maintenance/v1.6.1-ui-polish --title "公文 PDF 快合 v1.6.1（進度條＋現代化警告與排序清單）" --notes "以v1.6.1 Office COM版本為基底，新增底部進度條、警告設定獨立區塊、原生Windows TaskDialog大型標題與繼續／停止選項，以及序號、檔案名稱的雙欄清單。保留拖曳排序、HKCU無INI設定及測繪科署名。資安警告不保證Apex One不攔截。" --latest=false
           if ($LASTEXITCODE -ne 0) {throw 'Version release failed'}
