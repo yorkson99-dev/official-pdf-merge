@@ -102,7 +102,9 @@ const (
     SS_LEFTNOWORDWRAP    = 0x000C
     SS_NOPREFIX          = 0x0080
     SS_ENDELLIPSIS       = 0x4000
-	WM_DESTROY           = 0x0002
+	WM_TIMER             = 0x0113
+    checkpointExitTimer = 22001
+    WM_DESTROY           = 0x0002
 	WM_COMMAND           = 0x0111
 	WM_DROPFILES         = 0x0233
 	WM_SETFONT           = 0x0030
@@ -145,6 +147,7 @@ const (
 	ID_FULL_NAME         = 110
     ID_SAVE_AS           = 111
     ID_MIXED_WARNING     = 112
+    ID_CHECKPOINT_ZIP = 113
 	ID_LIST              = 201
 	ID_STATUS            = 202
     ID_PROGRESS=203
@@ -319,6 +322,7 @@ type zipAnalysisResult struct {
 }
 
 type mergeResult struct {
+    checkpoint *diagnosticResult
 	path  string
 	count int
 	err   error
@@ -453,7 +457,8 @@ func initUI() {
     makeChild("STATIC","本機處理 · 無須上傳 · ZIP 即放即合併",33,66,590,27,0,0)
     makeChild("STATIC","公文 ZIP　自動合併",43,124,575,34,0,0)
     makeChild("STATIC","PDF、Word、ODF、Excel、PowerPoint 附件自動轉檔並依序合併",43,161,594,30,0,0)
-    hwndZip=makeChild("BUTTON","選擇公文 ZIP",43,201,604,49,WS_TABSTOP|BS_OWNERDRAW,ID_ADD_ZIP)
+    hwndZip=makeChild("BUTTON","選擇公文 ZIP",43,201,397,49,WS_TABSTOP|BS_OWNERDRAW,ID_ADD_ZIP)
+    makeChild("BUTTON","分段接續",448,201,199,49,WS_TABSTOP|BS_OWNERDRAW,ID_CHECKPOINT_ZIP)
     hwndDetail=makeChild("BUTTON","使用完整日期與發文字號命名",45,261,582,27,WS_TABSTOP|0x00000003,ID_FULL_NAME)
     makeChild("STATIC","一般文件　手動排序合併",42,333,335,28,0,0)
     // Default is zero-dialog output in the first file's directory.
@@ -639,6 +644,36 @@ func startMixedWorker(files []string, output string) {
 }
 func zipFilter() []uint16 {
 	return []uint16{'Z', 'I', 'P', ' ', '(', '*', '.', 'z', 'i', 'p', ')', 0, '*', '.', 'z', 'i', 'p', 0, 0}
+}
+// Manual checkpoint workflow keeps each Office COM session bounded to two
+// conversions. No relaunch, bypass, or interference with endpoint protection.
+func chooseCheckpointZIP() {
+    buf:=make([]uint16,32768)
+    filter:=zipFilter()
+    f:=openFileName{lStructSize:uint32(unsafe.Sizeof(openFileName{})),hwndOwner:hwndMain,
+        lpstrFilter:&filter[0],lpstrFile:&buf[0],nMaxFile:uint32(len(buf)),
+        lpstrTitle:str("選擇公文 ZIP 進行分段接續"),
+        flags:OFN_EXPLORER|OFN_FILEMUSTEXIST|OFN_NOCHANGEDIR}
+    ret,_,_:=pGetOpenFileName.Call(uintptr(unsafe.Pointer(&f)))
+    if ret!=0 {startCheckpointZIP(syscall.UTF16ToString(buf))}
+}
+func startCheckpointZIP(path string) {
+    if isMerging{return}
+    isMerging=true
+    setProgressUI(2,"分段接續：每次最多轉換 2 份 Office 附件")
+    go func(){
+        result:=mergeResult{}
+        defer func(){
+            if v:=recover();v!=nil {result.err=fmt.Errorf("分段接續異常：%v",v)}
+            resultMu.Lock()
+            latestResult=result
+            resultMu.Unlock()
+            pPostMessage.Call(hwndMain,WM_APP+1,0,0)
+        }()
+        stage,err:=runZIPDiagnosticStage(path)
+        result.err=err
+        if err==nil {result.checkpoint=&stage}
+    }()
 }
 func chooseZIP() {
 	buf := make([]uint16, 32768)
@@ -834,6 +869,8 @@ func handleCommand(id int) {
 		startMerge()
 	case ID_ADD_ZIP:
 		chooseZIP()
+    case ID_CHECKPOINT_ZIP:
+        chooseCheckpointZIP()
 	}
 }
 func listIndexFromPoint(l uintptr) int {
@@ -927,7 +964,7 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		return 0
 	case WM_COMMAND:
 		id := int(w & 0xFFFF)
-		if (id == ID_ADD || id == ID_UP || id == ID_DOWN || id == ID_REMOVE || id == ID_CLEAR || id == ID_MERGE || id == ID_ADD_ZIP || id == ID_MIXED_WARNING) {
+		if (id == ID_ADD || id == ID_UP || id == ID_DOWN || id == ID_REMOVE || id == ID_CLEAR || id == ID_MERGE || id == ID_ADD_ZIP || id == ID_MIXED_WARNING || id == ID_CHECKPOINT_ZIP) {
 			handleCommand(id)
 			return 0
 		}
@@ -981,7 +1018,18 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		traceStartup("WM_APP+1 result obtained")
 		isMerging = false
 		traceStartup("WM_APP+1 flags restored")
-		if result.err != nil {
+		if result.checkpoint!=nil {
+            d:=result.checkpoint
+            if d.Finished {
+                setProgressUI(100,fmt.Sprintf("分段接續完成：%d頁｜%s",d.Pages,filepath.Base(d.PDFPath)))
+            } else {
+                percent:=d.Completed*100/d.Total
+                setProgressUI(percent,fmt.Sprintf("第%d階段完成：%d／%d份｜請重新開啟並選取相同ZIP",d.Stage,d.Completed,d.Total))
+            }
+            pSetTimer.Call(hwndMain,checkpointExitTimer,2200,0)
+            return 0
+        }
+        if result.err != nil {
 			traceStartup("WM_APP+1 failure update begin")
 			setProgressUI(0,"合併失敗｜"+result.err.Error())
 			alert("合併失敗：\n"+result.err.Error(), true)
@@ -991,7 +1039,13 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		}
 		traceStartup("WM_APP+1 done")
 		return 0
-	case WM_DESTROY:
+	case WM_TIMER:
+        if w==checkpointExitTimer {
+            pKillTimer.Call(hwndMain,checkpointExitTimer)
+            pDestroyWindow.Call(hwndMain)
+            return 0
+        }
+    case WM_DESTROY:
         if statusBrush != 0 { pDeleteObject.Call(statusBrush); statusBrush = 0 }
 		pPostQuitMessage.Call(0)
 		return 0
@@ -1027,7 +1081,7 @@ func main() {
     if x<int(work.Left) {x=int(work.Left)}
     if y<int(work.Top) {y=int(work.Top)}
 	traceStartup("CreateWindowExW begin")
-	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜臺北市政府地政局測繪科開發"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 728, 0, 0, instance, 0)
+	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合 v1.8.0｜臺北市政府地政局測繪科開發"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 728, 0, 0, instance, 0)
 	traceStartup(fmt.Sprintf("CreateWindowExW hwnd=%d error=%v", hwnd, windowErr))
 	if hwnd == 0 {
 		pMessageBox.Call(0, uintptr(unsafe.Pointer(str("無法建立程式視窗："+windowErr.Error()))), uintptr(unsafe.Pointer(str("公文 PDF 快合｜啟動失敗"))), MB_OK|MB_ICONERROR)
