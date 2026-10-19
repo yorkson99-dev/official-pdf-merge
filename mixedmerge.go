@@ -31,6 +31,7 @@ func mergeMixedFilesWithProgress(inputs []string,output string,report func(int,s
         }
         if ext == ".pdf" {
             pdfs = append(pdfs, input)
+            if report!=nil {report(5+55*(i+1)/len(inputs),"正在準備PDF文件")}
             continue
         }
         // Never put temporary Office/ODF outputs beside the user's documents.
@@ -47,10 +48,10 @@ func mergeMixedFilesWithProgress(inputs []string,output string,report func(int,s
             return 0, fmt.Errorf("%s 轉換結果無效：%w", filepath.Base(input), err)
         }
         pdfs = append(pdfs, converted)
-    }
-        if report!=nil {report(5+55*(i+1)/len(inputs),"正在準備及轉換文件")}
+        if report!=nil {report(5+55*(i+1)/len(inputs),"正在轉換Office文件")}
     }
     if len(pdfs) == 1 {
+        if report!=nil {report(85,"正在儲存PDF")}
         // A single editable document can still be dropped onto the EXE to
         // convert it. Preserve a single source PDF's bytes if requested.
         info, err := parsePDF(pdfs[0])
@@ -66,7 +67,7 @@ func mergeMixedFilesWithProgress(inputs []string,output string,report func(int,s
         if err != nil { os.Remove(output); return 0, err }
         return info.count, nil
     }
-    return mergePDFFiles(pdfs, output)
+    return mergePDFFilesWithProgress(pdfs,output,report)
 }
 
 // autoMergedPath returns an unused PDF path beside the first input. As Windows
