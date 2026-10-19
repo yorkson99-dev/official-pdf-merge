@@ -1,0 +1,11 @@
+公文 PDF 快合 v1.6.1 警告署名版 — 建置資訊
+
+基準程式：v1.6.1 (Microsoft Office COM + PDF記憶體解析)
+發行標籤：v1.6.1-warning
+保留原版：v1.6.1、v1.6.2、v1.6.3、v1.7.0均不覆寫
+程式署名：臺北市政府地政局測繪科開發
+慎用提醒：本次實際合併文件數 > 3 且至少1件不是PDF時提示
+預設：提醒啟用／停止合併為對話框預設選項
+偏好：HKCU登錄檔（不產生INI或設定側檔）
+Windows測試：https://github.com/yorkson99-dev/official-pdf-merge/actions/runs/39208971563
+注意：署名不等於Authenticode數位簽章，風險提醒不會更改Apex One規則。
