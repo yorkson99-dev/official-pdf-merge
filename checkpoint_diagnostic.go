@@ -212,8 +212,7 @@ func runZIPDiagnosticStage(zipPath string)(diagnosticResult,error){
  stage:=state.Stage+1
  name:=stagePDFName(stem,stage)
  out:=filepath.Join(folder,name)
- if _,err:=os.Stat(out);err==nil{return result,errors.New("階段輸出PDF已存在，不會覆寫："+name)}
- else if !os.IsNotExist(err){return result,err}
+ if _,err:=os.Stat(out);err==nil{return result,errors.New("階段輸出PDF已存在，不會覆寫："+name)} else if !os.IsNotExist(err){return result,err}
  prior:=""
  if exists{prior=filepath.Join(folder,state.PDFPath)}
  pages,e:=mergeDiagnosticZIPRange(job,start,end,prior,out)
