@@ -412,7 +412,7 @@ func confirmMixedMerge(count int, meetsThreshold bool) bool {
     }
     accepted:=confirmModernMixedMerge(count)
     if !accepted {
-        status("已停止混合格式合併，未建立輸出檔案。")
+        setProgressUI(0,"已停止混合格式合併，未建立輸出。")
         return false
     }
     return true
