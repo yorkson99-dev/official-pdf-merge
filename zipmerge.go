@@ -218,7 +218,10 @@ func extractZIPDocument(item *zip.File, dest string) error {
     return copyErr
 }
 
-func mergeOfficialZIP(j *officialJob, out string) (int, error) {
+func mergeOfficialZIP(j *officialJob,out string) (int,error) {
+    return mergeOfficialZIPWithProgress(j,out,nil)
+}
+func mergeOfficialZIPWithProgress(j *officialJob,out string,report func(int,string)) (int,error) {
     zr, err := zip.OpenReader(j.ZipPath)
     if err != nil { return 0, err }
     defer zr.Close()
@@ -264,6 +267,7 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
             docs = append(docs, doc)
             memoryPDF += uint64(len(data))
             if len(j.Entries) == 1 { singleBytes = data }
+            if report!=nil {report(8+55*(i+1)/len(j.Entries),"正在解析公文附件")}
             continue
         }
 
@@ -287,11 +291,14 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
         if e != nil { return 0, fmt.Errorf("%s：%w", entry.name, e) }
         docs = append(docs, doc)
         if len(j.Entries) == 1 { singleFile = path }
+        if report!=nil {report(8+55*(i+1)/len(j.Entries),"正在轉換及解析附件")}
     }
 
     if len(docs) == 0 { return 0, errors.New("公文 ZIP 不含可合併的 PDF") }
     if len(docs) > 1 {
-        return mergePDFDocuments(docs, out)
+        return mergePDFDocumentsWithProgress(docs,out,func(done,total int) {
+            if report!=nil {report(63+35*done/total,"正在合併PDF頁面")}
+        })
     }
 
     // One-PDF ZIPs preserve the original document bytes and metadata. Do not
@@ -314,5 +321,6 @@ func mergeOfficialZIP(j *officialJob, out string) (int, error) {
         os.Remove(out)
         return 0, writeErr
     }
-    return docs[0].count, nil
+    if report!=nil {report(98,"完成輸出前檢查")}
+    return docs[0].count,nil
 }
