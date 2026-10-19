@@ -12,7 +12,10 @@ import (
 // mergeMixedFiles handles the PDF-only fast path as well as supported editable
 // documents without installing a PDF renderer or office suite on the client.
 // Inputs are processed strictly in the order provided by the caller.
-func mergeMixedFiles(inputs []string, output string) (int, error) {
+func mergeMixedFiles(inputs []string,output string) (int,error) {
+    return mergeMixedFilesWithProgress(inputs,output,nil)
+}
+func mergeMixedFilesWithProgress(inputs []string,output string,report func(int,string)) (int,error) {
     if len(inputs) == 0 { return 0, errors.New("沒有要處理的文件") }
     // A pure-PDF manual merge needs no workspace at all. Only Office files
     // require temporary converted documents.
@@ -44,6 +47,8 @@ func mergeMixedFiles(inputs []string, output string) (int, error) {
             return 0, fmt.Errorf("%s 轉換結果無效：%w", filepath.Base(input), err)
         }
         pdfs = append(pdfs, converted)
+    }
+        if report!=nil {report(5+55*(i+1)/len(inputs),"正在準備及轉換文件")}
     }
     if len(pdfs) == 1 {
         // A single editable document can still be dropped onto the EXE to
