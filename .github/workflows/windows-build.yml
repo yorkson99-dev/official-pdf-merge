@@ -1,7 +1,7 @@
 name: Build standalone Win32 EXE
 on:
   push:
-    branches: [main]
+    branches: [maintenance/v1.6.1-mixed-warning]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -58,6 +58,20 @@ jobs:
       - name: Embed native application icon
         shell: pwsh
         run: ./ci-embed-icon.ps1
+      - name: Embed Surveying Division developer attribution
+        shell: pwsh
+        run: ./ci-embed-attribution.ps1
+      - name: Verify developer attribution and toggle resource
+        shell: pwsh
+        run: |
+          $source=Get-Content -Raw -Encoding UTF8 main_windows.go
+          if ($source -notmatch '臺北市政府地政局測繪科開發') { throw 'Missing UI developer attribution' }
+          if ($source -notmatch 'ID_MIXED_WARNING') { throw 'Missing warning toggle' }
+          if ($source -notmatch 'MB_DEFBUTTON2') { throw 'Risk dialog must default to stop' }
+          $v=[System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path '公文PDF快合.exe').Path)
+          if ($v.CompanyName -ne '臺北市政府地政局測繪科') {throw 'Metadata CompanyName mismatch'}
+          if ($v.Comments -ne '臺北市政府地政局測繪科開發') {throw 'Metadata Comments mismatch'}
+          Write-Output 'PASS: developer credit, guarded user interaction, native EXE metadata'
       - name: Build diagnostic console executable (CI only)
         shell: pwsh
         run: go build -trimpath -o debug-console.exe .
@@ -80,37 +94,21 @@ jobs:
       - name: Manual sorted merge auto-save and optional Save As integration test
         shell: pwsh
         run: ./ci-manual-autosave-e2e.ps1
+      - name: End-to-end safety prompt and persistent warning checkbox
+        shell: pwsh
+        run: ./ci-warning-e2e.ps1
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
           name: OfficialPDFMerge-win64
           path: 公文PDF快合.exe
           if-no-files-found: error
-      - name: Publish portable EXE release v1.6.1
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Publish portable EXE release v1.6.1 warning and attribution
+        if: github.event_name == 'push' && github.ref == 'refs/heads/maintenance/v1.6.1-mixed-warning' && contains(github.event.head_commit.message, 'release-v1.6.1-warning')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           Copy-Item -LiteralPath "公文PDF快合.exe" -Destination "OfficialPDFMerge.exe" -Force
-          gh release view v1.6.1 --json tagName *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload v1.6.1 "OfficialPDFMerge.exe" --clobber
-          } else {
-            gh release create v1.6.1 "OfficialPDFMerge.exe" --target main --title "公文 PDF 快合 v1.6.1" --notes "維護版：一般大小的純 PDF 公文 ZIP 改在記憶體中解析及合併，免逐件解壓暫存；僅 Office 轉檔及大型文件需要工作資料夾。維持單一 EXE、原有命名排序及 COM 轉檔。保留安全的同目錄暫存輸出後正式命名。不以效能調整取代端點安全驗證。" --latest
-          }
-          if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed" }
-      - name: Check in extracted source files and remove bootstrap archive
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        shell: pwsh
-        run: |
-          if (Test-Path 'bootstrap/source.00.txt') {
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add -- .gitignore go.mod main_windows.go cli.go lettertext.go pdfmerge.go zipmerge.go pdfmerge_test.go zipmerge_test.go testdata/sample0.pdf
-            git rm -r -- bootstrap
-            git commit -m 'feat: publish native Win32 PDF merger source and tests'
-            if ($LASTEXITCODE -ne 0) { throw 'Git commit failed' }
-            git push origin HEAD:main
-            if ($LASTEXITCODE -ne 0) { throw 'Git push failed' }
-          }
+          gh release create v1.6.1-warning "OfficialPDFMerge.exe" --target maintenance/v1.6.1-mixed-warning --title "公文 PDF 快合 v1.6.1（混合多檔慎用警告＋測繪科署名）" --notes "完全以 v1.6.1 的 Microsoft Office COM 和 PDF 解析架構為基底。僅在實際合併檔案>3且含非PDF時，預設提示是否繼續（預設停止），可在主畫面關閉提醒並用HKCU記憶。純PDF合併不警示。EXE與GUI標註臺北市政府地政局測繪科開發。EXE仍未簽章，安全警告不能保證避免Apex One攔截。" --latest=false
+          if ($LASTEXITCODE -ne 0) {throw 'Version release failed'}
