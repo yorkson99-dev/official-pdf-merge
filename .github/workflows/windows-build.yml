@@ -1,7 +1,7 @@
 name: Build standalone Win32 EXE
 on:
   push:
-    branches: [maintenance/v1.6.1-ui-polish]
+    branches: [maintenance/v1.6.1-office-count-warning]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -70,6 +70,7 @@ jobs:
           $source=Get-Content -Raw -Encoding UTF8 main_windows.go
           if ($source -notmatch '臺北市政府地政局測繪科開發') { throw 'Missing UI developer attribution' }
           if ($source -notmatch 'ID_MIXED_WARNING') { throw 'Missing warning toggle' }
+          if ($source -notmatch '需轉檔附件超過2份') { throw 'Warning option must describe Office conversions rather than total merged file count' }
           if (-not (Test-Path ui_taskdialog_windows.go)) {throw 'Missing modern TaskDialog'}
           $dialog=Get-Content -Raw ui_taskdialog_windows.go
           if ($dialog -notmatch 'taskDialogStop') {throw 'Missing default-stop native TaskDialog'}
@@ -112,11 +113,11 @@ jobs:
           path: 公文PDF快合.exe
           if-no-files-found: error
       - name: Publish portable EXE release v1.6.1 interface polish
-        if: github.event_name == 'push' && github.ref == 'refs/heads/maintenance/v1.6.1-ui-polish' && contains(github.event.head_commit.message, 'release-v1.6.1-ui')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/maintenance/v1.6.1-office-count-warning' && contains(github.event.head_commit.message, 'release-v1.6.1-office2')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           Copy-Item -LiteralPath "公文PDF快合.exe" -Destination "OfficialPDFMerge.exe" -Force
-          gh release create v1.6.1-ui "OfficialPDFMerge.exe" --target maintenance/v1.6.1-ui-polish --title "公文 PDF 快合 v1.6.1（進度條＋現代化警告與排序清單）" --notes "以v1.6.1 Office COM版本為基底，新增底部進度條、警告設定獨立區塊、原生Windows TaskDialog大型標題與繼續／停止選項，以及序號、檔案名稱的雙欄清單。保留拖曳排序、HKCU無INI設定及測繪科署名。資安警告不保證Apex One不攔截。" --latest=false
+          gh release create v1.6.1-office2 "OfficialPDFMerge.exe" --target maintenance/v1.6.1-office-count-warning --title "公文 PDF 快合 v1.6.1（需轉檔超過2份警告版）" --notes "沿用v1.6.1 UI優化版全部功能，僅將慎用提醒改為單次實際需要Office轉檔的附件超過2份時顯示，純PDF不計數，ZIP與一般檔案及直接拖入一致。保留測繪科署名、進度列、雙欄清單及HKCU設定。此為依觀察設定之提醒門檻，不代表Apex One偵測已排除；沒有加入自動重啟分批處理機制。" --latest=false
           if ($LASTEXITCODE -ne 0) {throw 'Version release failed'}
