@@ -277,6 +277,9 @@ func paintButton(l uintptr) {
     case ID_ADD_ZIP:
         title="  選擇公文 ZIP　›"
         fill=winColor(37,112,237);border=fill;fg=winColor(255,255,255)
+    case ID_CHECKPOINT_ZIP:
+        title="分段接續"
+        fill=winColor(231,241,255);border=winColor(210,228,252);fg=winColor(24,101,224)
     case ID_MERGE:
         title="合併一般文件"
         fill=winColor(231,241,255);border=winColor(210,228,252);fg=winColor(24,101,224)
