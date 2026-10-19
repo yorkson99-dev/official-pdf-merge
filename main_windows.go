@@ -43,6 +43,8 @@ var (
 	pSetWindowLongPtr         = u32.NewProc("SetWindowLongPtrW")
 	pCallWindowProc           = u32.NewProc("CallWindowProcW")
 	pGetSystemMetrics         = u32.NewProc("GetSystemMetrics")
+    pSetTimer=u32.NewProc("SetTimer")
+    pKillTimer=u32.NewProc("KillTimer")
 	pGetModuleHandle          = k32.NewProc("GetModuleHandleW")
 	pDragAcceptFiles          = s32.NewProc("DragAcceptFiles")
 	pDragQueryFile            = s32.NewProc("DragQueryFileW")
@@ -93,6 +95,8 @@ const (
     SS_ENDELLIPSIS       = 0x4000
 	WM_DESTROY           = 0x0002
 	WM_COMMAND           = 0x0111
+    WM_TIMER = 0x0113
+    diagnosticExitTimer=22001
 	WM_DROPFILES         = 0x0233
 	WM_SETFONT           = 0x0030
 	WM_LBUTTONDOWN       = 0x0201
@@ -860,22 +864,16 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
         if result.diagnostic!=nil {
             d:=result.diagnostic
             if d.Finished {
-                status(fmt.Sprintf("分段診斷已完成，共%d頁，輸出已保存在原ZIP同層",d.Pages))
+                status(fmt.Sprintf("診斷已完成：%d頁，PDF與接續紀錄位於原ZIP同層",d.Pages))
             }else{
-                status(fmt.Sprintf("第%d階段完成，已處理%d/%d份；請重新開啟EXE後接續",d.Stage,d.Completed,d.Total))
+                status(fmt.Sprintf("第%d階段：%d／%d份，約2秒後關閉；重開選原ZIP續接",
+                    d.Stage,d.Completed,d.Total))
             }
-            message:=fmt.Sprintf("本次第%d階段轉換%d份Office文件。\n"+
-                "已完成：%d／%d份；累計：%d頁。\n\n"+
-                "PDF：%s\n"+
-                "接續紀錄：%s\n\n",d.Stage,d.Converted,d.Completed,d.Total,d.Pages,
-                filepath.Base(d.PDFPath),filepath.Base(d.CheckpointPath))
-            if d.Finished {
-                message+="所有附件已合併完畢。請核對結果並清理診斷階段檔案。"
-            }else{
-                message+="程式即將正常結束。請再次啟動本測試版，選擇同一ZIP即可接續下一階段。"
-            }
-            alert(message,false)
-            pDestroyWindow.Call(hwndMain) // stop this process; never launch child processes
+            // A native completion MessageBox blocked process termination on
+            // some Windows desktop runners. Instead show brief status feedback
+            // and deterministically exit; the on-disk stage PDF and JSON are
+            // durable evidence even after this process ends.
+            pSetTimer.Call(hwndMain,diagnosticExitTimer,2200,0)
             return 0
         }
 		if result.err != nil {
@@ -888,7 +886,13 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		}
 		traceStartup("WM_APP+1 done")
 		return 0
-	case WM_DESTROY:
+	case WM_TIMER:
+        if w==diagnosticExitTimer {
+            pKillTimer.Call(hwndMain,diagnosticExitTimer)
+            pDestroyWindow.Call(hwndMain)
+            return 0
+        }
+    case WM_DESTROY:
         if statusBrush != 0 { pDeleteObject.Call(statusBrush); statusBrush = 0 }
 		pPostQuitMessage.Call(0)
 		return 0
