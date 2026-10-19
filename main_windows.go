@@ -481,7 +481,7 @@ func initUI() {
 
 func refresh(selectIndex int) {
 	send(hwndList, LB_RESETCONTENT, 0, 0)
-	for i, file := range winFiles {
+	for _, file := range winFiles {
 		label := filepath.Base(file)
 		send(hwndList, LB_ADDSTRING, 0, uintptr(unsafe.Pointer(str(label))))
 	}
