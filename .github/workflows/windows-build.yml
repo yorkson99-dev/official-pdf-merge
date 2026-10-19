@@ -110,7 +110,7 @@ jobs:
         run: |
           go test -run TestDiagnostic -v .
           $ui = Get-Content -Raw -Encoding UTF8 main_windows.go
-          if ($ui -notmatch "ID_CHECKPOINT_ZIP" -or $ui -notmatch "runZIPDiagnosticStage") { throw "Missing checkpoint UI integration" }
+          if ($ui -notmatch "ID_CHECKPOINT_ZIP" -or $ui -notmatch "runZIPPublishedStage") { throw "Missing checkpoint UI integration" }
           if ($ui -notmatch "hwndProgress" -or $ui -notmatch "ID_MIXED_WARNING") { throw "UI regression" }
       - name: Upload executable
         uses: actions/upload-artifact@v4
