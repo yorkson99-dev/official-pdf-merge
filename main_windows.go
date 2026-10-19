@@ -343,7 +343,10 @@ func initUI() {
     fontHandle, _, _ = pCreateFont.Call(uintptr(fontHeight),0,0,0,400,0,0,0,1,0,0,0,0,uintptr(unsafe.Pointer(str("Microsoft JhengHei UI"))))
     titleHeight := int32(-29)
     titleFont,_,_=pCreateFont.Call(uintptr(titleHeight),0,0,0,700,0,0,0,1,0,0,0,0,uintptr(unsafe.Pointer(str("Microsoft JhengHei UI"))))
-    header:=makeChild("STATIC","公文快合",32,17,400,39,0,0)
+    header:=makeChild("STATIC","公文快合",32,17,280,39,0,0)
+    // Developer attribution is visible inside the application without
+    // changing the functional controls or the processing status bar.
+    makeChild("STATIC","臺北市政府地政局測繪科開發",354,35,308,26,SS_LEFTNOWORDWRAP|SS_NOPREFIX,0)
     if titleFont != 0 {send(header, WM_SETFONT,titleFont,1)}
     makeChild("STATIC","本機處理 · 無須上傳 · ZIP 即放即合併",33,66,590,27,0,0)
     makeChild("STATIC","公文 ZIP　自動合併",43,124,575,34,0,0)
@@ -863,7 +866,7 @@ func main() {
 		y = 0
 	}
 	traceStartup("CreateWindowExW begin")
-	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜極簡版"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 660, 0, 0, instance, 0)
+	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜臺北市政府地政局測繪科開發"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 660, 0, 0, instance, 0)
 	traceStartup(fmt.Sprintf("CreateWindowExW hwnd=%d error=%v", hwnd, windowErr))
 	if hwnd == 0 {
 		pMessageBox.Call(0, uintptr(unsafe.Pointer(str("無法建立程式視窗："+windowErr.Error()))), uintptr(unsafe.Pointer(str("公文 PDF 快合｜啟動失敗"))), MB_OK|MB_ICONERROR)
