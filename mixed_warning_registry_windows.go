@@ -54,7 +54,7 @@ func writeMixedWarningSetting(enabled bool) error {
     data := uint32(0)
     if enabled { data = 1 }
     rc, _, _ = regSetValue.Call(handle,uintptr(unsafe.Pointer(name)),0,
-        regDWord,uintptr(unsafe.Pointer(&data)),uint32(unsafe.Sizeof(data)))
+        regDWord,uintptr(unsafe.Pointer(&data)),uintptr(unsafe.Sizeof(data)))
     if rc != 0 {return syscall.Errno(rc)}
     return nil
 }
