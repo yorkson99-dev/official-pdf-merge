@@ -1,0 +1,12 @@
+公文PDF快合 v1.6.1分段診斷測試版
+
+核心來源：原始v1.6.1 Microsoft Office COM + PDF記憶體合併。
+新介面：「分段診斷測試」按鈕，與一般整批ZIP合併按鈕完全獨立。
+單程序Office轉檔件數：最多2份（純PDF附件不計入）。
+階段結果：直接於ZIP所在同層輸出ZIP名.分段診斷第NNN階段.pdf、ZIP名.分段診斷.json。
+接續：重新啟動此測試版，選擇相同ZIP；核對來源和前階段PDF SHA-256後只處理後續附件。
+階段退出：成功保存PDF及接續紀錄後，狀態列顯示約2秒，本次EXE自行正常結束。
+無自動重新啟動、無修改Apex One、無安全規則調整；不保證避免偵測。
+來源ZIP及既有PDF不覆寫；轉檔失敗不推進接續點。
+診斷PDF與接續JSON會留在來源同層，僅以無機敏合成資料試行。
+Windows自動測試：https://github.com/yorkson99-dev/official-pdf-merge/actions/runs/39221950771
