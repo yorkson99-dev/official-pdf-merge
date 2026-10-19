@@ -60,6 +60,7 @@ func confirmModernMixedMerge(count int) bool {
     // If Common Controls v6 cannot be loaded, fail closed: show an explicit
     // native caution with Stop selected; never bypass the user's warning.
     if err:=taskDialogIndirectProc.Find();err!=nil{
+        traceStartup("TaskDialogIndirect unavailable: "+err.Error())
         return legacyMixedWarning(count)
     }
     buttons:=[2]taskDialogButton{
@@ -82,8 +83,10 @@ func confirmModernMixedMerge(count int) bool {
     var selected int32
     hr,_,_:=taskDialogIndirectProc.Call(uintptr(unsafe.Pointer(&cfg)),uintptr(unsafe.Pointer(&selected)),0,0)
     if int32(hr)<0 {
+        traceStartup(fmt.Sprintf("TaskDialogIndirect HRESULT=0x%08X size=%d",uint32(hr),cfg.size))
         return legacyMixedWarning(count)
     }
+    traceStartup(fmt.Sprintf("TaskDialogIndirect success button=%d",selected))
     return selected==taskDialogContinue
 }
 
