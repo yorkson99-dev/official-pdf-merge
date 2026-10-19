@@ -78,7 +78,7 @@ function Assert-DialogAndCancel([string[]]$files,[string]$folder) {
         }
         if ([WarningE2E]::FindWindow('FastPDFRiskDialog',$caption) -ne [IntPtr]::Zero){throw 'Warning dialog failed to close on stop'}
         Assert-NoOutput $folder
-        Write-Output 'PASS: mixed >3 warning shown, custom native dialog offers Stop and Continue, cancel produces no output.'
+        Write-Output 'PASS: third Office conversion warning shown, custom native dialog offers Stop and Continue, cancel produces no output.'
     } finally {
         $p.Refresh()
         if (!$p.HasExited){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue}
@@ -117,24 +117,24 @@ try {
     $mixed=Join-Path $root 'mixed'
     New-Item -ItemType Directory -Force $mixed | Out-Null
     $files=@()
-    foreach($n in @(1,2,3)){
-        $dest=Join-Path $mixed ("part$n.pdf")
-        Copy-Item (Join-Path $PSScriptRoot 'testdata/sample0.pdf') $dest
-        $files+= $dest
+    $pdf=Join-Path $mixed 'part1.pdf'
+    Copy-Item (Join-Path $PSScriptRoot 'testdata/sample0.pdf') $pdf
+    $files+=$pdf
+    foreach($name in @('part2.odt','part3.docx','part4.ods')){
+        $file=Join-Path $mixed $name
+        [System.IO.File]::WriteAllText($file,'synthetic test only')
+        $files+=$file
     }
-    $odt=Join-Path $mixed 'part4.odt'
-    [System.IO.File]::WriteAllText($odt,'synthetic test only')
-    $files+=$odt
     Assert-DialogAndCancel $files $mixed
     # E2E 3: ZIP counts only main and eligible attachments, ignoring opinion files.
     $payload=Join-Path $root 'zip-content'
     $letter=Join-Path $payload '來文'
     New-Item -ItemType Directory -Force $letter | Out-Null
     Copy-Item (Join-Path $PSScriptRoot 'testdata/sample0.pdf') (Join-Path $letter 'AB.pdf')
-    Copy-Item (Join-Path $PSScriptRoot 'testdata/sample0.pdf') (Join-Path $letter 'AB_ATTCH1.pdf')
-    Copy-Item (Join-Path $PSScriptRoot 'testdata/sample0.pdf') (Join-Path $letter 'AB_ATTCH2.pdf')
     Copy-Item (Join-Path $PSScriptRoot 'testdata/sample0.pdf') (Join-Path $letter 'AB(opinion).pdf')
-    [System.IO.File]::WriteAllText((Join-Path $letter 'AB_ATTCH3.odt'),'synthetic test only')
+    [System.IO.File]::WriteAllText((Join-Path $letter 'AB_ATTCH1.odt'),'synthetic test only')
+    [System.IO.File]::WriteAllText((Join-Path $letter 'AB_ATTCH2.docx'),'synthetic test only')
+    [System.IO.File]::WriteAllText((Join-Path $letter 'AB_ATTCH3.ods'),'synthetic test only')
     $archive=Join-Path $root 'mixed.zip'
     [System.IO.Compression.ZipFile]::CreateFromDirectory($payload,$archive)
     Assert-DialogAndCancel @($archive) $root
