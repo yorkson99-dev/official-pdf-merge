@@ -130,6 +130,7 @@ const (
 	ID_ADD_ZIP           = 109
 	ID_FULL_NAME         = 110
     ID_SAVE_AS           = 111
+    ID_DIAGNOSTIC_ZIP=112
 	ID_LIST              = 201
 	ID_STATUS            = 202
 )
@@ -265,6 +266,7 @@ func paintButton(l uintptr) {
 }
 
 type mergeResult struct {
+    diagnostic *diagnosticResult
 	path  string
 	count int
 	err   error
@@ -348,7 +350,8 @@ func initUI() {
     makeChild("STATIC","本機處理 · 無須上傳 · ZIP 即放即合併",33,66,590,27,0,0)
     makeChild("STATIC","公文 ZIP　自動合併",43,124,575,34,0,0)
     makeChild("STATIC","PDF、Word、ODF、Excel、PowerPoint 附件自動轉檔並依序合併",43,161,594,30,0,0)
-    hwndZip=makeChild("BUTTON","選擇公文 ZIP",43,201,604,49,WS_TABSTOP|BS_OWNERDRAW,ID_ADD_ZIP)
+    hwndZip=makeChild("BUTTON","選擇公文 ZIP",43,201,403,49,WS_TABSTOP|BS_OWNERDRAW,ID_ADD_ZIP)
+    makeChild("BUTTON","分段診斷測試",454,201,193,49,WS_TABSTOP|BS_OWNERDRAW,ID_DIAGNOSTIC_ZIP)
     hwndDetail=makeChild("BUTTON","使用完整日期與發文字號命名",45,264,582,30,WS_TABSTOP|0x00000003,ID_FULL_NAME)
     makeChild("STATIC","一般文件　手動排序合併",42,333,335,28,0,0)
     // Default is zero-dialog output in the first file's directory.
@@ -475,6 +478,10 @@ func handleStartupFiles(args []string) {
     // Dragging files onto an unopened EXE launches it with file arguments.
     // That workflow is unattended and never invokes GetSaveFileNameW.
     if len(args) == 0 { return }
+    if args[0] == "--diagnostic-zip" {
+        if len(args)!=2 {status("請以 --diagnostic-zip 加上單一公文ZIP路徑");return}
+        startDiagnosticZIP(args[1:][0]);return
+    }
     if args[0] == "--manual" {
         handleInputFiles(args[1:])
         return
@@ -527,6 +534,37 @@ func startMixedWorker(files []string, output string) {
 func zipFilter() []uint16 {
 	return []uint16{'Z', 'I', 'P', ' ', '(', '*', '.', 'z', 'i', 'p', ')', 0, '*', '.', 'z', 'i', 'p', 0, 0}
 }
+func chooseDiagnosticZIP(){
+    buf:=make([]uint16,32768)
+    filter:=zipFilter()
+    f:=openFileName{lStructSize:uint32(unsafe.Sizeof(openFileName{})),
+        hwndOwner:hwndMain,lpstrFilter:&filter[0],lpstrFile:&buf[0],
+        nMaxFile:uint32(len(buf)),
+        lpstrTitle:str("選擇公文ZIP進行分段診斷（僅以測試資料操作）"),
+        flags:OFN_EXPLORER|OFN_FILEMUSTEXIST|OFN_NOCHANGEDIR}
+    ret,_,_:=pGetOpenFileName.Call(uintptr(unsafe.Pointer(&f)))
+    if ret!=0 {startDiagnosticZIP(syscall.UTF16ToString(buf))}
+}
+
+func startDiagnosticZIP(path string) {
+    if isMerging{return}
+    isMerging=true
+    status("診斷模式：本階段最多轉換2份Office附件")
+    go func(){
+        result:=mergeResult{}
+        defer func(){
+            if v:=recover();v!=nil {result.err=fmt.Errorf("診斷階段發生異常：%v",v)}
+            resultMu.Lock()
+            latestResult=result
+            resultMu.Unlock()
+            pPostMessage.Call(hwndMain,WM_APP+1,0,0)
+        }()
+        stage,err:=runZIPDiagnosticStage(path)
+        result.err=err
+        if err==nil {result.diagnostic=&stage}
+    }()
+}
+
 func chooseZIP() {
 	buf := make([]uint16, 32768)
 	filter := zipFilter()
@@ -711,6 +749,8 @@ func handleCommand(id int) {
 		startMerge()
 	case ID_ADD_ZIP:
 		chooseZIP()
+    case ID_DIAGNOSTIC_ZIP:
+        chooseDiagnosticZIP()
 	}
 }
 func listIndexFromPoint(l uintptr) int {
@@ -795,7 +835,7 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		return 0
 	case WM_COMMAND:
 		id := int(w & 0xFFFF)
-		if (id == ID_ADD || id == ID_UP || id == ID_DOWN || id == ID_REMOVE || id == ID_CLEAR || id == ID_MERGE || id == ID_ADD_ZIP) {
+		if (id == ID_ADD || id == ID_UP || id == ID_DOWN || id == ID_REMOVE || id == ID_CLEAR || id == ID_MERGE || id == ID_ADD_ZIP || id == ID_DIAGNOSTIC_ZIP) {
 			handleCommand(id)
 			return 0
 		}
@@ -817,6 +857,27 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		traceStartup("WM_APP+1 result obtained")
 		isMerging = false
 		traceStartup("WM_APP+1 flags restored")
+        if result.diagnostic!=nil {
+            d:=result.diagnostic
+            if d.Finished {
+                status(fmt.Sprintf("分段診斷已完成，共%d頁，輸出已保存在原ZIP同層",d.Pages))
+            }else{
+                status(fmt.Sprintf("第%d階段完成，已處理%d/%d份；請重新開啟EXE後接續",d.Stage,d.Completed,d.Total))
+            }
+            message:=fmt.Sprintf("本次第%d階段轉換%d份Office文件。\n"+
+                "已完成：%d／%d份；累計：%d頁。\n\n"+
+                "PDF：%s\n"+
+                "接續紀錄：%s\n\n",d.Stage,d.Converted,d.Completed,d.Total,d.Pages,
+                filepath.Base(d.PDFPath),filepath.Base(d.CheckpointPath))
+            if d.Finished {
+                message+="所有附件已合併完畢。請核對結果並清理診斷階段檔案。"
+            }else{
+                message+="程式即將正常結束。請再次啟動本測試版，選擇同一ZIP即可接續下一階段。"
+            }
+            alert(message,false)
+            pDestroyWindow.Call(hwndMain) // stop this process; never launch child processes
+            return 0
+        }
 		if result.err != nil {
 			traceStartup("WM_APP+1 failure update begin")
 			status("合併失敗｜" + result.err.Error())
@@ -863,7 +924,7 @@ func main() {
 		y = 0
 	}
 	traceStartup("CreateWindowExW begin")
-	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜極簡版"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 660, 0, 0, instance, 0)
+	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜v1.6.1 分段診斷試作版"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 660, 0, 0, instance, 0)
 	traceStartup(fmt.Sprintf("CreateWindowExW hwnd=%d error=%v", hwnd, windowErr))
 	if hwnd == 0 {
 		pMessageBox.Call(0, uintptr(unsafe.Pointer(str("無法建立程式視窗："+windowErr.Error()))), uintptr(unsafe.Pointer(str("公文 PDF 快合｜啟動失敗"))), MB_OK|MB_ICONERROR)
