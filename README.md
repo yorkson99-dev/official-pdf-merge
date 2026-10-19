@@ -114,3 +114,8 @@ go build -trimpath -ldflags="-H=windowsgui -s -w" -o "公文PDF快合.exe" .
 Windows 入口為 `main_windows.go`，主文解析為 `lettertext.go`，公文 ZIP 規則為 `zipmerge.go`，PDF 合併核心為 `pdfmerge.go`。
 
 程式僅供依機關資訊安全政策核可後使用。
+## v1.8.0 開發候選：分段接續及正式發布
+
+此分支延續v1.6.1-ui原生Win32介面與Microsoft Office COM，不取代既有單次ZIP合併。使用「分段接續」選取公文ZIP，每次處理不超過2份需轉檔文件，使用者自行重新開啟程式並選取相同ZIP繼續。全部階段成功後，輸出正常命名PDF並顯示100%完成；保留帶有雜湊的JSON完成紀錄，清理可確認來源的階段PDF。
+
+發布正式PDF採先產生完整暫存檔、再以同目錄硬連結不可覆寫式發布；若共用磁碟不支援此功能，不會輸出有缺頁的正式PDF，而保留階段成果。另將原有混合格式慎用警告套用於此功能。**沒有自動重啟或繞過端點安全產品**，實際Office轉檔與機關防毒仍須實機驗證。

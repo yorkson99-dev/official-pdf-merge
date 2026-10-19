@@ -1,6 +1,6 @@
 package main
 
-// TEST-ONLY checkpointed ZIP merge.
+// Checkpointed ZIP merge core, shared with the published user-facing workflow.
 // Each invocation processes at most two editable Office/ODF attachments,
 // publishes one cumulative PDF next to the original ZIP, stores an explicit
 // JSON checkpoint, and returns. A new user-launched process can then resume.
@@ -34,6 +34,9 @@ type diagnosticCheckpoint struct {
  PDFSHA256 string `json:"pdf_sha256"`
  Pages int `json:"pages"`
  Finished bool `json:"finished"`
+ FinalPDFPath string `json:"final_pdf,omitempty"`
+ FinalPDFSHA256 string `json:"final_pdf_sha256,omitempty"`
+ StageSHA256 []string `json:"stage_hashes,omitempty"`
  UpdatedAt string `json:"updated_at"`
 }
 type diagnosticResult struct {
@@ -46,6 +49,8 @@ type diagnosticResult struct {
  CheckpointPath string
  Finished bool
  Duration time.Duration
+ Published bool
+ Warning string
 }
 func fingerprintFile(path string)(string,error){
  f,e:=os.Open(path)
@@ -108,6 +113,22 @@ func checkDiagnosticCheckpoint(state diagnosticCheckpoint,sourceHash string,tota
  if state.Completed<1||state.Completed>total||state.Stage<1{
   return errors.New("診斷紀錄的進度不合法")
  }
+ if state.Finished && state.Completed!=total{return errors.New("完成狀態與附件數量不符")}
+ if state.FinalPDFPath!="" {
+  // Completed jobs validate the published PDF; stage files can be safely cleaned.
+  if filepath.Base(state.FinalPDFPath)!=state.FinalPDFPath ||
+   !strings.EqualFold(filepath.Ext(state.FinalPDFPath),".pdf") ||
+   state.FinalPDFSHA256=="" {
+   return errors.New("正式檔案接續紀錄無效")
+  }
+  final:=filepath.Join(folder,state.FinalPDFPath)
+  hash,e:=fingerprintFile(final)
+  if e!=nil{return fmt.Errorf("已完成的正式PDF遺失：%w",e)}
+  if hash!=state.FinalPDFSHA256{return errors.New("已完成正式PDF雜湊不符")}
+  parsed,e:=parsePDF(final)
+  if e!=nil||parsed.count!=state.Pages{return fmt.Errorf("已完成正式PDF頁數或格式異常：%v",e)}
+  return nil
+ }
  expected:=stagePDFName(stem,state.Stage)
  if state.PDFPath!=expected{return errors.New("既有診斷紀錄的PDF路徑異常")}
  pdfPath:=filepath.Join(folder,expected)
@@ -115,7 +136,6 @@ func checkDiagnosticCheckpoint(state diagnosticCheckpoint,sourceHash string,tota
  if e!=nil{return fmt.Errorf("前階段PDF遺失：%w",e)}
  if hash!=state.PDFSHA256{return errors.New("前階段PDF內容或雜湊已變更，拒絕接續")}
  if _,e=parsePDF(pdfPath);e!=nil{return fmt.Errorf("前階段PDF無法讀取：%w",e)}
- if state.Finished&&state.Completed!=total{return errors.New("完成狀態與附件數量不符")}
  return nil
 }
 func mergeDiagnosticZIPRange(
@@ -197,10 +217,13 @@ func runZIPDiagnosticStage(zipPath string)(diagnosticResult,error){
  if exists{
   if e=checkDiagnosticCheckpoint(state,sha,len(job.Entries),folder,stem);e!=nil{return result,e}
   if state.Finished {
+   published:=state.FinalPDFPath!=""
+   name:=state.PDFPath
+   if published{name=state.FinalPDFPath}
    return diagnosticResult{
     Stage:state.Stage,Completed:state.Completed,Total:state.Entries,
-    Pages:state.Pages,PDFPath:filepath.Join(folder,state.PDFPath),
-    CheckpointPath:statePath,Finished:true,
+    Pages:state.Pages,PDFPath:filepath.Join(folder,name),
+    CheckpointPath:statePath,Finished:true,Published:published,
    },nil
   }
  }else{
@@ -225,10 +248,18 @@ func runZIPDiagnosticStage(zipPath string)(diagnosticResult,error){
  }
  pdfHash,e:=fingerprintFile(out)
  if e!=nil{_ =os.Remove(out);return result,e}
+ // Preserve hashes of earlier stage files, including a legacy stage that
+ // predates the stage-hash history. Unknown old hashes are left empty.
+ history:=append([]string(nil),state.StageSHA256...)
+ if len(history)!=state.Stage {
+  history=make([]string,state.Stage)
+  if state.Stage>0 {history[state.Stage-1]=state.PDFSHA256}
+ }
+ history=append(history,pdfHash)
  next:=diagnosticCheckpoint{
   Version:diagnosticStateVersion,SourceSHA256:sha,Entries:len(job.Entries),
   Completed:end,Stage:stage,PDFPath:name,PDFSHA256:pdfHash,
-  Pages:pages,Finished:end==len(job.Entries),
+  Pages:pages,Finished:end==len(job.Entries),StageSHA256:history,
   UpdatedAt:time.Now().Format(time.RFC3339),
  }
  if e=saveDiagnosticCheckpoint(statePath,next);e!=nil{

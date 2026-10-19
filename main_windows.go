@@ -320,6 +320,7 @@ func paintOrderedRow(l uintptr) {
     pDrawText.Call(item.Hdc,uintptr(unsafe.Pointer(str(name))),^uintptr(0),uintptr(unsafe.Pointer(&nameRect)),DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS)
 }
 type zipAnalysisResult struct {
+    checkpoint bool
     path string
     job *officialJob
     detailed bool
@@ -664,20 +665,31 @@ func chooseCheckpointZIP() {
 }
 func startCheckpointZIP(path string) {
     if isMerging{return}
+    detailed:=send(hwndDetail,BM_GETCHECK,0,0)!=0
     isMerging=true
-    setProgressUI(2,"分段接續：每次最多轉換 2 份 Office 附件")
+    setProgressUI(2,"正在分析分段接續公文ZIP："+filepath.Base(path))
+    go func(){
+        job,err:=analyzeZIP(path)
+        resultMu.Lock()
+        pendingZipAnalysis=zipAnalysisResult{path:path,job:job,err:err,detailed:detailed,checkpoint:true}
+        resultMu.Unlock()
+        pPostMessage.Call(hwndMain,WM_APP+4,0,0)
+    }()
+}
+func runAnalyzedCheckpointZIP(request zipAnalysisResult) {
+    setProgressUI(7,"正在處理分段接續："+filepath.Base(request.path))
     go func(){
         result:=mergeResult{}
         defer func(){
-            if v:=recover();v!=nil {result.err=fmt.Errorf("分段接續異常：%v",v)}
+            if v:=recover();v!=nil{result.err=fmt.Errorf("分段接續異常：%v",v)}
             resultMu.Lock()
             latestResult=result
             resultMu.Unlock()
             pPostMessage.Call(hwndMain,WM_APP+1,0,0)
         }()
-        stage,err:=runZIPDiagnosticStage(path)
+        stage,err:=runZIPPublishedStage(request.path,request.detailed)
         result.err=err
-        if err==nil {result.checkpoint=&stage}
+        if err==nil{result.checkpoint=&stage}
     }()
 }
 func chooseZIP() {
@@ -1013,7 +1025,7 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
             setProgressUI(0,"已取消合併")
             return 0
         }
-        runAnalyzedZIP(request)
+        if request.checkpoint {runAnalyzedCheckpointZIP(request)} else {runAnalyzedZIP(request)}
         return 0
 	case WM_APP + 1:
 		traceStartup("WM_APP+1 received")
@@ -1026,7 +1038,8 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		if result.checkpoint!=nil {
             d:=result.checkpoint
             if d.Finished {
-                setProgressUI(100,fmt.Sprintf("分段接續完成：%d頁｜%s",d.Pages,filepath.Base(d.PDFPath)))
+                setProgressUI(100,fmt.Sprintf("正式公文PDF完成：%d頁｜%s",d.Pages,filepath.Base(d.PDFPath)))
+                return 0
             } else {
                 percent:=d.Completed*100/d.Total
                 setProgressUI(percent,fmt.Sprintf("第%d階段完成：%d／%d份｜請重新開啟並選取相同ZIP",d.Stage,d.Completed,d.Total))
