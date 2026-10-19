@@ -42,6 +42,8 @@ var (
 	pEnableWindow             = u32.NewProc("EnableWindow")
 	pDestroyWindow            = u32.NewProc("DestroyWindow")
 	pPostQuitMessage          = u32.NewProc("PostQuitMessage")
+	pSetTimer                = u32.NewProc("SetTimer")
+	pKillTimer               = u32.NewProc("KillTimer")
 	pSetWindowLongPtr         = u32.NewProc("SetWindowLongPtrW")
 	pCallWindowProc           = u32.NewProc("CallWindowProcW")
 	pGetSystemMetrics         = u32.NewProc("GetSystemMetrics")
