@@ -1,7 +1,7 @@
 name: Build standalone Win32 EXE
 on:
   push:
-    branches: [maintenance/v1.6.3-stream]
+    branches: [maintenance/v1.6.3-attribution]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -58,6 +58,19 @@ jobs:
       - name: Embed native application icon
         shell: pwsh
         run: ./ci-embed-icon.ps1
+      - name: Embed developer attribution in native Windows Details
+        shell: pwsh
+        run: ./ci-embed-attribution.ps1
+      - name: Verify source and built executable display the same attribution
+        shell: pwsh
+        run: |
+          $source = Get-Content -Raw -Encoding UTF8 main_windows.go
+          if ($source -notmatch '臺北市政府地政局測繪科開發') { throw 'Visible UI attribution is missing' }
+          $v = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path '公文PDF快合.exe').Path)
+          if ($v.CompanyName -ne '臺北市政府地政局測繪科') { throw 'Windows file CompanyName is missing' }
+          if ($v.Comments -ne '臺北市政府地政局測繪科開發') { throw 'Windows file Comments is missing' }
+          if ($v.FileDescription -ne '公文 PDF 快合') { throw 'Windows file description changed' }
+          Write-Output 'PASS: visible attribution and embedded EXE metadata'
       - name: Build diagnostic console executable (CI only)
         shell: pwsh
         run: go build -trimpath -o debug-console.exe .
@@ -86,17 +99,17 @@ jobs:
           name: OfficialPDFMerge-win64
           path: 公文PDF快合.exe
           if-no-files-found: error
-      - name: Publish portable EXE release v1.6.3
-        if: github.event_name == 'push' && github.ref == 'refs/heads/maintenance/v1.6.3-stream' && contains(github.event.head_commit.message, 'release-v1.6.3')
+      - name: Publish portable EXE release v1.6.3 attribution
+        if: github.event_name == 'push' && github.ref == 'refs/heads/maintenance/v1.6.3-attribution' && contains(github.event.head_commit.message, 'release-attribution-v1.6.3')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           Copy-Item -LiteralPath "公文PDF快合.exe" -Destination "OfficialPDFMerge.exe" -Force
-          gh release view v1.6.3 --json tagName *> $null
+          gh release view v1.6.3-attribution --json tagName *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload v1.6.3 "OfficialPDFMerge.exe" --clobber
+            gh release upload v1.6.3-attribution "OfficialPDFMerge.exe" --clobber
           } else {
-            gh release create v1.6.3 "OfficialPDFMerge.exe" --target maintenance/v1.6.3-stream --latest=false --title "公文 PDF 快合 v1.6.3" --notes "串流合併版：沿用 v1.6.2 Microsoft Office COM。逐份解析並寫入PDF物件，最後建立頁面樹及交叉參照表；整體僅產生一份原子發布的合併PDF。Office轉檔仍需短期工作檔。安全軟體偵測尚待實機驗證。"
+            gh release create v1.6.3-attribution "OfficialPDFMerge.exe" --target maintenance/v1.6.3-attribution --latest=false --title "公文 PDF 快合 v1.6.3（測繪科署名版）" --notes "沿用v1.6.3完整串流合併與Office COM架構，僅於主畫面及Windows檔案內容新增『臺北市政府地政局測繪科開發』署名。此資訊為開發單位標註，不是數位簽章或資安允許憑證；Apex One仍可能攔截。"
           }
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed" }
