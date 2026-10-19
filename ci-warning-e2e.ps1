@@ -52,7 +52,7 @@ function Assert-NoOutput([string]$folder) {
 function Assert-DialogAndCancel([string[]]$files,[string]$folder) {
     $p=Start-GUI $files
     try {
-        $caption='混合格式多檔合併｜慎用警告'
+        $caption='公文PDF快合｜慎用提醒'
         $dialog=[IntPtr]::Zero
         for ($i=0;$i -lt 80;$i++){
             Start-Sleep -Milliseconds 200
@@ -61,10 +61,13 @@ function Assert-DialogAndCancel([string[]]$files,[string]$folder) {
         }
         if ($dialog -eq [IntPtr]::Zero){throw 'Expected warning dialog was not displayed'}
         Assert-NoOutput $folder
-        $no=[WarningE2E]::GetDlgItem($dialog,7)
-        if ($no -eq [IntPtr]::Zero){throw 'Dialog does not contain a Stop/No choice'}
-        if (![WarningE2E]::PostMessage($dialog,0x111,[UIntPtr]::new(7),$no)){
-            throw 'Could not select stop in native warning dialog'
+        $no=[WarningE2E]::GetDlgItem($dialog,1002)
+        $yes=[WarningE2E]::GetDlgItem($dialog,1001)
+        if ($no -eq [IntPtr]::Zero -or $yes -eq [IntPtr]::Zero){
+            throw 'Modern command-link TaskDialog was not shown: expected Stop and Continue buttons'
+        }
+        if (![WarningE2E]::PostMessage($dialog,0x111,[UIntPtr]::new(1002),$no)){
+            throw 'Could not select Stop in TaskDialog'
         }
         for ($i=0;$i -lt 35;$i++){
             Start-Sleep -Milliseconds 200
@@ -72,7 +75,7 @@ function Assert-DialogAndCancel([string[]]$files,[string]$folder) {
         }
         if ([WarningE2E]::FindWindow('#32770',$caption) -ne [IntPtr]::Zero){throw 'Warning dialog failed to close on stop'}
         Assert-NoOutput $folder
-        Write-Output 'PASS: mixed >3 warning shown, default-stop dialog offers No, cancel produces no output.'
+        Write-Output 'PASS: mixed >3 warning shown, modern command-link dialog offers Stop and Continue, cancel produces no output.'
     } finally {
         $p.Refresh()
         if (!$p.HasExited){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue}
@@ -146,7 +149,7 @@ try {
         $done=$false
         for($i=0;$i -lt 110;$i++){
             Start-Sleep -Milliseconds 250
-            if ([WarningE2E]::FindWindow('#32770','混合格式多檔合併｜慎用警告') -ne [IntPtr]::Zero){
+            if ([WarningE2E]::FindWindow('#32770','公文PDF快合｜慎用提醒') -ne [IntPtr]::Zero){
                 throw 'Pure PDF merge must not show mixed-format warning'
             }
             $out=Join-Path $pure '合併檔案.pdf'
