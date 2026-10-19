@@ -622,7 +622,7 @@ func startAutoMixed(files []string) {
 func startMixedWorker(files []string, output string) {
     if isMerging { return }
     isMerging = true
-    status(fmt.Sprintf("正在轉換及合併 %d 份文件…", len(files)))
+    setProgressUI(3,fmt.Sprintf("開始處理%d份文件…",len(files)))
     snapshot := append([]string(nil), files...)
     go func() {
         result := mergeResult{path: output}
@@ -633,7 +633,7 @@ func startMixedWorker(files []string, output string) {
             resultMu.Unlock()
             pPostMessage.Call(hwndMain, WM_APP+1, 0, 0)
         }()
-        result.count, result.err = mergeMixedFiles(snapshot, output)
+        result.count, result.err = mergeMixedFilesWithProgress(snapshot,output,postProgress)
     }()
 }
 func zipFilter() []uint16 {
@@ -673,7 +673,7 @@ func startOfficialZIP(path string) {
     detailed:=send(hwndDetail,BM_GETCHECK,0,0)!=0
     traceStartup("ZIP analysis scheduled")
     isMerging=true
-    status("正在分析公文ZIP："+filepath.Base(path))
+    setProgressUI(2,"正在分析公文ZIP："+filepath.Base(path))
     go func() {
         job,err:=analyzeZIP(path)
         resultMu.Lock()
@@ -684,7 +684,7 @@ func startOfficialZIP(path string) {
 }
 
 func runAnalyzedZIP(request zipAnalysisResult) {
-    status("正在處理："+filepath.Base(request.path))
+    setProgressUI(7,"正在準備合併："+filepath.Base(request.path))
     go func(){
         var result mergeResult
         defer func(){
@@ -704,7 +704,7 @@ func runAnalyzedZIP(request zipAnalysisResult) {
         out,err:=autoOutputPath(request.path,name)
         if err!=nil{result.err=err;return}
         result.path=out
-        result.count,result.err=mergeOfficialZIP(job,out)
+        result.count,result.err=mergeOfficialZIPWithProgress(job,out,postProgress)
         if result.err==nil&&nameErr!=nil{result.warning="（檔名待核對）"}
     }()
 }
@@ -894,10 +894,19 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
         paintBackground(h)
         return 0
     case WM_DRAWITEM:
-        paintButton(l)
+        item:=(*drawItem)(unsafe.Pointer(l))
+        if item!=nil && item.CtlType==ODT_LISTBOX && item.CtlID==ID_LIST {
+            paintOrderedRow(l)
+        } else {paintButton(l)}
         return 1
+    case WM_MEASUREITEM:
+        item:=(*measureItem)(unsafe.Pointer(l))
+        if item!=nil && item.ctlID==ID_LIST {
+            item.itemHeight=24
+            return 1
+        }
     case WM_CTLCOLORSTATIC:
-        if l == hwndStatus && statusBrush != 0 {
+        if (l == hwndStatus || l == hwndProgressLabel) && statusBrush != 0 {
             // Paint over the old status before rendering new text. Transparent
             // static controls can leave previous long filenames behind.
             pSetBkMode.Call(w,2)
@@ -931,6 +940,12 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 	case WM_APP + 3:
 		if len(os.Args) > 1 { handleStartupFiles(os.Args[1:]) }
 		return 0
+    case WM_APP + 5:
+        progressMu.Lock()
+        update:=latestProgress
+        progressMu.Unlock()
+        if isMerging {setProgressUI(update.percent,update.stage)}
+        return 0
     case WM_APP + 4:
         // ZIP analysis completes on a worker, but the modal confirmation must
         // run on the UI thread before Office conversion or PDF output begins.
@@ -940,17 +955,19 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
         resultMu.Unlock()
         if request.err!=nil {
             isMerging=false
-            status("ZIP分析失敗："+request.err.Error())
+            setProgressUI(0,"ZIP分析失敗："+request.err.Error())
             alert("公文ZIP分析失敗：\n"+request.err.Error(),true)
             return 0
         }
         if request.job==nil {
             isMerging=false
+            setProgressUI(0,"公文ZIP分析沒有產生有效結果")
             alert("公文ZIP分析沒有產生有效結果。",true)
             return 0
         }
         if !confirmMixedMerge(len(request.job.Entries),needsMixedZIPWarning(request.job.Entries)) {
             isMerging=false
+            setProgressUI(0,"已取消合併")
             return 0
         }
         runAnalyzedZIP(request)
@@ -965,11 +982,11 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		traceStartup("WM_APP+1 flags restored")
 		if result.err != nil {
 			traceStartup("WM_APP+1 failure update begin")
-			status("合併失敗｜" + result.err.Error())
+			setProgressUI(0,"合併失敗｜"+result.err.Error())
 			alert("合併失敗：\n"+result.err.Error(), true)
 		} else {
 			traceStartup("WM_APP+1 success update begin")
-			status(fmt.Sprintf("完成 %d 頁%s｜%s", result.count, result.warning, filepath.Base(result.path)))
+			setProgressUI(100,fmt.Sprintf("完成%d頁%s｜%s",result.count,result.warning,filepath.Base(result.path)))
 		}
 		traceStartup("WM_APP+1 done")
 		return 0
@@ -1001,7 +1018,7 @@ func main() {
 	screenX, _, _ := pGetSystemMetrics.Call(0)
 	screenY, _, _ := pGetSystemMetrics.Call(1)
 	x := int((screenX - 690) / 2)
-	y := int((screenY - 660) / 2)
+	y := int((screenY - 754) / 2)
 	if x < 0 {
 		x = 0
 	}
@@ -1009,7 +1026,7 @@ func main() {
 		y = 0
 	}
 	traceStartup("CreateWindowExW begin")
-	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜臺北市政府地政局測繪科開發"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 660, 0, 0, instance, 0)
+	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜臺北市政府地政局測繪科開發"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 754, 0, 0, instance, 0)
 	traceStartup(fmt.Sprintf("CreateWindowExW hwnd=%d error=%v", hwnd, windowErr))
 	if hwnd == 0 {
 		pMessageBox.Call(0, uintptr(unsafe.Pointer(str("無法建立程式視窗："+windowErr.Error()))), uintptr(unsafe.Pointer(str("公文 PDF 快合｜啟動失敗"))), MB_OK|MB_ICONERROR)
