@@ -39,9 +39,8 @@ function Start-GUI([string[]]$files) {
         Start-Sleep -Milliseconds 180
         $p.Refresh()
         if ($p.HasExited) {throw "EXE exited unexpectedly: $($p.ExitCode)"}
-        $main=[WarningE2E]::FindWindow('FastPDFMergeNativeGUI',$null)
-        if ($main -ne [IntPtr]::Zero) {
-            $control=[WarningE2E]::GetDlgItem($main,112)
+        if ($p.MainWindowHandle -ne [IntPtr]::Zero) {
+            $control=[WarningE2E]::GetDlgItem($p.MainWindowHandle,112)
             if ($control -ne [IntPtr]::Zero){return $p}
         }
     }
@@ -85,7 +84,7 @@ try {
     # E2E 1: checkbox starts on; toggling it uses HKCU and survives restarts.
     $p=Start-GUI @()
     try {
-        $checkbox=[WarningE2E]::GetDlgItem([WarningE2E]::FindWindow('FastPDFMergeNativeGUI',$null),112)
+        $checkbox=[WarningE2E]::GetDlgItem($p.MainWindowHandle,112)
         $checked=[WarningE2E]::SendMessage($checkbox,0x00F0,[UIntPtr]::Zero,[IntPtr]::Zero)
         if ($checked.ToInt64() -ne 1){throw 'Safety warning checkbox should default to enabled'}
         [void][WarningE2E]::SendMessage($checkbox,0x00F5,[UIntPtr]::Zero,[IntPtr]::Zero)
@@ -97,7 +96,7 @@ try {
     }
     $p=Start-GUI @()
     try {
-        $checkbox=[WarningE2E]::GetDlgItem([WarningE2E]::FindWindow('FastPDFMergeNativeGUI',$null),112)
+        $checkbox=[WarningE2E]::GetDlgItem($p.MainWindowHandle,112)
         $checked=[WarningE2E]::SendMessage($checkbox,0x00F0,[UIntPtr]::Zero,[IntPtr]::Zero)
         if ($checked.ToInt64() -ne 0){throw 'Disabled checkbox preference was not reloaded'}
         [void][WarningE2E]::SendMessage($checkbox,0x00F5,[UIntPtr]::Zero,[IntPtr]::Zero)
