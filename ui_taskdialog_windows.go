@@ -67,7 +67,7 @@ func warningWndProc(h uintptr,m uint32,w,l uintptr)uintptr{
         if titleFont!=0{send(icon,WM_SETFONT,titleFont,1)}
         title:=riskChild(h,"STATIC","混合格式合併提醒",81,32,420,44,SS_LEFTNOWORDWRAP,0)
         if titleFont!=0{send(title,WM_SETFONT,titleFont,1)}
-        riskChild(h,"STATIC",fmt.Sprintf("本次合併共%d份文件，包含非PDF附件。",riskWarningCount),
+        riskChild(h,"STATIC",fmt.Sprintf("本次共%d份文件，其中%d份需要Office轉檔。",riskWarningCount,riskOfficeCount),
             43,114,477,29,SS_LEFTNOWORDWRAP,0)
         riskChild(h,"STATIC","Apex One可能攔截此操作，請審慎確認。",
             43,150,480,33,SS_LEFTNOWORDWRAP,0)
@@ -123,9 +123,11 @@ func warningWndProc(h uintptr,m uint32,w,l uintptr)uintptr{
 }
 
 var riskWarningCount int
+var riskOfficeCount int
 
-func confirmModernMixedMerge(count int)bool {
+func confirmModernMixedMerge(count int,officeCount int)bool {
     riskWarningCount=count
+    riskOfficeCount=officeCount
     warningDialogDone=false
     warningDialogAccepted=false
     instance,_,_:=pGetModuleHandle.Call(0)
@@ -138,7 +140,7 @@ func confirmModernMixedMerge(count int)bool {
             lpszClassName:className,
         }
         atom,_,_:=pRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))
-        if atom==0{return legacyMixedWarning(count)}
+        if atom==0{return legacyMixedWarning(count,officeCount)}
         warningClassRegistered=true
     }
     var parent winRect
@@ -154,7 +156,7 @@ func confirmModernMixedMerge(count int)bool {
         hwndMain,0,instance,0)
     if hwnd==0{
         pEnableWindow.Call(hwndMain,1)
-        return legacyMixedWarning(count)
+        return legacyMixedWarning(count,officeCount)
     }
     warningDialogHWND=hwnd
     if warningButtonStop!=0{pSetFocus.Call(warningButtonStop)}
@@ -173,8 +175,8 @@ func confirmModernMixedMerge(count int)bool {
     return warningDialogAccepted
 }
 
-func legacyMixedWarning(count int)bool{
-    text:=fmt.Sprintf("混合格式共%d份，Apex One可能攔截。\n\n是否繼續合併？",count)
+func legacyMixedWarning(count int,officeCount int)bool{
+    text:=fmt.Sprintf("共%d份文件，其中%d份需Office轉檔。\nApex One可能攔截此操作。\n\n是否仍要繼續合併？",count,officeCount)
     selected,_,_:=pMessageBox.Call(hwndMain,
         uintptr(unsafe.Pointer(str(text))),
         uintptr(unsafe.Pointer(str("公文PDF快合｜慎用提醒"))),
