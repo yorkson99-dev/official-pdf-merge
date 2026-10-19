@@ -45,27 +45,16 @@ try{
   throw "Invalid checkpoint contents: $(Get-Content -Raw $state)"
  }
  if((Get-Item $out).Length -lt 100){throw 'Diagnostic cumulative PDF is invalid'}
- $dialog=[IntPtr]::Zero
- for($i=0;$i -lt 50;$i++){
-  Start-Sleep -Milliseconds 200
-  $dialog=[DiagWin32]::FindWindow('#32770','快合 PDF')
-  if($dialog -ne [IntPtr]::Zero){break}
- }
- if($dialog -eq [IntPtr]::Zero){throw 'Stage completed but no user-facing completion dialog appeared'}
- # The native MessageBox can publish its top-level HWND a fraction of a
- # second before the IDOK child exists. Use its standard IDOK command instead
- # of assuming GetDlgItem succeeds on the first scheduler tick.
- if(![DiagWin32]::PostMessage($dialog,0x111,[UIntPtr]::new(1),[IntPtr]::Zero)){
-  throw 'Cannot dispatch standard IDOK command'
- }
+ # The diagnostic GUI deliberately terminates after a short visible status,
+ # without a blocking message box or automatic child-process restart.
  for($i=0;$i -lt 70;$i++){
   Start-Sleep -Milliseconds 150
   $proc.Refresh()
   if($proc.HasExited){break}
  }
- if(!$proc.HasExited){throw 'User acknowledged the stage but diagnostic process did not terminate'}
+ if(!$proc.HasExited){throw 'Diagnostic process did not close automatically after stage completion'}
  if($proc.ExitCode -ne 0){throw "Diagnostic process exit code $($proc.ExitCode)"}
- Write-Output 'PASS: launched test-only ZIP mode, wrote verified cumulative PDF plus JSON, closed completely after acknowledgement.'
+ Write-Output 'PASS: launched test-only ZIP mode, wrote verified cumulative PDF plus JSON, terminated the whole process automatically.'
 }finally{
  $proc.Refresh()
  if(!$proc.HasExited){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
