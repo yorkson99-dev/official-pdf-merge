@@ -15,6 +15,8 @@ public static class PolishedUI {
  public static extern bool PostMessage(IntPtr h,uint msg,UIntPtr w,IntPtr l);
  [DllImport("user32.dll")]
  public static extern bool GetWindowRect(IntPtr h,out WinRect rect);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)]
+ public static extern bool SystemParametersInfo(uint action,uint param,out WinRect rect,uint flags);
 }
 [StructLayout(LayoutKind.Sequential)]
 public struct WinRect {public int left,top,right,bottom;}
@@ -66,6 +68,12 @@ try {
     [void][PolishedUI]::GetWindowRect($warning,[ref]$warningRect)
     [void][PolishedUI]::GetWindowRect($merge,[ref]$mergeRect)
     if($warningRect.top -le $mergeRect.bottom) {throw 'Shared warning toggle still inside the manual merge section'}
+    $workArea=New-Object WinRect
+    $barArea=New-Object WinRect
+    if([PolishedUI]::SystemParametersInfo(0x0030,0,[ref]$workArea,0)) {
+        [void][PolishedUI]::GetWindowRect($progress,[ref]$barArea)
+        if($barArea.bottom -gt $workArea.bottom) {throw 'Progress bar is hidden behind the taskbar'}
+    }
     Write-Output 'PASS: separate warning checkbox below both merge modes and true 序號 / 檔案名稱 headers.'
     if(![PolishedUI]::PostMessage($h,0x0111,[UIntPtr]::new(108),[IntPtr]::Zero)){
         throw 'Failed to submit merge button command'
