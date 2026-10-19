@@ -71,7 +71,7 @@ func confirmModernMixedMerge(count int) bool {
         hwndParent:hwndMain,
         flags:taskDialogUseCommandLinks|taskDialogAllowCancel|taskDialogRelativeToWindow|taskDialogSizeToContent,
         windowTitle:str("公文PDF快合｜慎用提醒"),
-        mainIcon:^uintptr(0), // TD_WARNING_ICON / MAKEINTRESOURCEW(-1)
+        mainIcon:0xFFFF, // TD_WARNING_ICON is MAKEINTRESOURCEW(-1): low WORD 0xFFFF, not sign-extended -1
         instruction:str("混合格式文件較多，是否繼續？"),
         content:str(fmt.Sprintf("共%d份文件，包含非PDF附件。\nApex One可能攔截合併操作。",count)),
         buttonCount:uint32(len(buttons)),
