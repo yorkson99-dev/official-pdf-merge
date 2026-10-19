@@ -347,10 +347,10 @@ func confirmMixedMerge(count int, meetsThreshold bool) bool {
     if !meetsThreshold || hwndMixedWarning==0 || send(hwndMixedWarning,BM_GETCHECK,0,0)==0 {
         return true
     }
-    msg:=fmt.Sprintf("本次將合併%d份文件，且包含非PDF格式附件。\\n\\n"+
+    msg:=fmt.Sprintf("本次將合併%d份文件，且包含非PDF格式附件。\n\n"+
         "混合多檔轉檔在部分安裝Apex One的電腦上，可能觸發安全軟體攔截。"+
-        "請先確認文件來源可信，且操作符合機關資安規範。\\n\\n"+
-        "是否繼續合併？\\n\\n"+
+        "請先確認文件來源可信，且操作符合機關資安規範。\n\n"+
+        "是否繼續合併？\n\n"+
         "「是」＝繼續合併；「否」＝停止合併（預設）。",count)
     choice,_,_:=pMessageBox.Call(hwndMain,uintptr(unsafe.Pointer(str(msg))),
         uintptr(unsafe.Pointer(str("混合格式多檔合併｜慎用警告"))),
@@ -367,7 +367,7 @@ func updateWarningPreference() {
     previous:=readMixedWarningSetting()
     if err:=writeMixedWarningSetting(enabled);err!=nil {
         if previous {send(hwndMixedWarning,BM_SETCHECK,1,0)} else {send(hwndMixedWarning,BM_SETCHECK,0,0)}
-        alert("無法儲存慎用警告設定：\\n"+err.Error()+"\\n設定已恢復原值。",true)
+        alert("無法儲存慎用警告設定：\n"+err.Error()+"\n設定已恢復原值。",true)
         return
     }
     if enabled {status("已開啟混合格式多檔慎用警告（設定已記憶）。")
@@ -878,7 +878,7 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
         if request.err!=nil {
             isMerging=false
             status("ZIP分析失敗："+request.err.Error())
-            alert("公文ZIP分析失敗：\\n"+request.err.Error(),true)
+            alert("公文ZIP分析失敗：\n"+request.err.Error(),true)
             return 0
         }
         if request.job==nil {
