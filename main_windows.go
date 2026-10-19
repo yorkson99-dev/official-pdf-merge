@@ -22,6 +22,8 @@ var (
 	k32                       = syscall.NewLazyDLL("kernel32.dll")
 	s32                       = syscall.NewLazyDLL("shell32.dll")
 	comdlg                    = syscall.NewLazyDLL("comdlg32.dll")
+    cc32= syscall.NewLazyDLL("comctl32.dll")
+    pInitCommonControlsEx=cc32.NewProc("InitCommonControlsEx")
 	pRegisterClassEx          = u32.NewProc("RegisterClassExW")
 	pCreateWindowEx           = u32.NewProc("CreateWindowExW")
 	pDefWindowProc            = u32.NewProc("DefWindowProcW")
@@ -75,12 +77,15 @@ const (
 	WS_VSCROLL           = 0x00200000
 	WS_TABSTOP           = 0x00010000
 	WS_EX_CLIENTEDGE     = 0x00000200
-	LBS_NOTIFY           = 0x0001
+	LBS_OWNERDRAWFIXED=0x0010
+    LBS_HASSTRINGS=0x0040
+    LBS_NOTIFY           = 0x0001
 	LBS_NOINTEGRALHEIGHT = 0x0100
 	WM_CREATE            = 0x0001
     WM_PAINT             = 0x000F
     WM_ERASEBKGND        = 0x0014
     WM_DRAWITEM          = 0x002B
+    WM_MEASUREITEM=0x002C
     WM_CTLCOLORSTATIC    = 0x0138
     BS_OWNERDRAW         = 0x0000000B
     ODS_SELECTED         = 0x0001
@@ -88,6 +93,11 @@ const (
     DT_CENTER            = 0x0001
     DT_VCENTER           = 0x0004
     DT_SINGLELINE        = 0x0020
+    DT_END_ELLIPSIS=0x00008000
+    ODT_LISTBOX=0x0002
+    ICC_PROGRESS_CLASS=0x20
+    PBM_SETPOS=0x0402
+    PBM_SETRANGE32=0x0406
     SS_LEFTNOWORDWRAP    = 0x000C
     SS_NOPREFIX          = 0x0080
     SS_ENDELLIPSIS       = 0x4000
@@ -136,6 +146,10 @@ const (
     ID_MIXED_WARNING     = 112
 	ID_LIST              = 201
 	ID_STATUS            = 202
+    ID_PROGRESS=203
+    ID_COLUMN_ORDER=204
+    ID_COLUMN_FILENAME=205
+    ID_PROGRESS_LABEL=206
 )
 
 type wndClass struct {
@@ -198,6 +212,14 @@ type paintStruct struct {
     IncUpdate int32
     Reserved [32]byte
 }
+type measureItem struct {
+ ctlType uint32
+ ctlID uint32
+ itemID uint32
+ itemWidth uint32
+ itemHeight uint32
+ itemData uintptr
+}
 type drawItem struct {
     CtlType uint32
     CtlID uint32
@@ -233,10 +255,11 @@ func paintBackground(hwnd uintptr) {
     hdc,_,_:=pBeginPaint.Call(hwnd,uintptr(unsafe.Pointer(&ps)))
     if hdc==0 {return}
     bg:=winColor(247,249,253)
-    fillColor(hdc,winRect{0,0,690,660},bg)
-    roundedColor(hdc,winRect{22,106,668,315},24,winColor(233,243,255),winColor(217,232,253))
+    fillColor(hdc,winRect{0,0,690,730},bg)
+    roundedColor(hdc,winRect{22,106,668,305},24,winColor(233,243,255),winColor(217,232,253))
     roundedColor(hdc,winRect{22,321,668,577},24,winColor(255,255,255),winColor(229,235,243))
-    roundedColor(hdc,winRect{22,586,668,619},13,winColor(236,242,249),winColor(236,242,249))
+    roundedColor(hdc,winRect{22,588,668,630},13,winColor(255,255,255),winColor(229,235,243))
+    roundedColor(hdc,winRect{22,641,668,710},13,winColor(236,242,249),winColor(236,242,249))
     pEndPaint.Call(hwnd,uintptr(unsafe.Pointer(&ps)))
 }
 func paintButton(l uintptr) {
@@ -268,6 +291,25 @@ func paintButton(l uintptr) {
     pDrawText.Call(d.Hdc,uintptr(unsafe.Pointer(str(title))),^uintptr(0),uintptr(unsafe.Pointer(&d.RcItem)),DT_CENTER|DT_VCENTER|DT_SINGLELINE)
 }
 
+func paintOrderedRow(l uintptr) {
+    item:=(*drawItem)(unsafe.Pointer(l))
+    if item==nil || item.ItemID==^uint32(0) {return}
+    i:=int(item.ItemID)
+    if i<0 || i>=len(winFiles) {return}
+    bg,fg:=winColor(255,255,255),winColor(38,54,77)
+    if item.State&ODS_SELECTED!=0 {bg=winColor(221,236,255);fg=winColor(22,82,160)}
+    fillColor(item.Hdc,item.RcItem,bg)
+    seqBG:=winColor(246,249,253)
+    if item.State&ODS_SELECTED!=0 {seqBG=winColor(198,224,255)}
+    seq:=winRect{Left:item.RcItem.Left,Top:item.RcItem.Top,Right:item.RcItem.Left+63,Bottom:item.RcItem.Bottom}
+    fillColor(item.Hdc,seq,seqBG)
+    fillColor(item.Hdc,winRect{seq.Right,item.RcItem.Top,seq.Right+1,item.RcItem.Bottom},winColor(225,234,246))
+    pSetBkMode.Call(item.Hdc,1);pSetTextColor.Call(item.Hdc,fg)
+    pDrawText.Call(item.Hdc,uintptr(unsafe.Pointer(str(fmt.Sprintf("%02d",i+1)))),^uintptr(0),uintptr(unsafe.Pointer(&seq)),DT_CENTER|DT_VCENTER|DT_SINGLELINE)
+    name:=filepath.Base(winFiles[i])
+    nameRect:=winRect{seq.Right+13,item.RcItem.Top,item.RcItem.Right-8,item.RcItem.Bottom}
+    pDrawText.Call(item.Hdc,uintptr(unsafe.Pointer(str(name))),^uintptr(0),uintptr(unsafe.Pointer(&nameRect)),DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS)
+}
 type zipAnalysisResult struct {
     path string
     job *officialJob
@@ -282,7 +324,7 @@ type mergeResult struct {
 	warning string
 }
 var (
-	hwndMain, hwndList, hwndStatus, hwndMerge, hwndZip, hwndDetail, hwndSaveAs, hwndMixedWarning uintptr
+	hwndMain, hwndList, hwndStatus, hwndMerge, hwndZip, hwndDetail, hwndSaveAs, hwndMixedWarning, hwndProgress, hwndProgressLabel uintptr
 	oldListProc                                                    uintptr
 	winFiles                                                       []string
 	dragFrom                                                       = -1
@@ -290,6 +332,8 @@ var (
 	resultMu                                                       sync.Mutex
 	latestResult                                                   mergeResult
     pendingZipAnalysis zipAnalysisResult
+    progressMu sync.Mutex
+    latestProgress progressMessage
 	fontHandle                                                     uintptr
     titleFont uintptr
     statusBrush uintptr
@@ -307,6 +351,25 @@ func traceStartup(stage string) {
 	fmt.Fprintf(f, "%s pid=%d %s\n", time.Now().UTC().Format(time.RFC3339Nano), os.Getpid(), stage)
 }
 
+type progressMessage struct {
+ percent int
+ stage string
+}
+func setProgressUI(percent int,stage string) {
+ if percent<0 {percent=0}
+ if percent>100 {percent=100}
+ if hwndProgress!=0 {send(hwndProgress,PBM_SETPOS,uintptr(percent),0)}
+ if hwndProgressLabel!=0 {
+  pSetWindowText.Call(hwndProgressLabel,uintptr(unsafe.Pointer(str(fmt.Sprintf("%d%%",percent)))))
+ }
+ if stage!="" {status(stage)}
+}
+func postProgress(percent int,stage string) {
+ progressMu.Lock()
+ latestProgress=progressMessage{percent,stage}
+ progressMu.Unlock()
+ pPostMessage.Call(hwndMain,WM_APP+5,0,0)
+}
 func str(s string) *uint16 { p, _ := syscall.UTF16PtrFromString(s); return p }
 func fileFilter() []uint16 {
     return windowsFilter("PDF (*.pdf)", "*.pdf")
@@ -347,15 +410,8 @@ func confirmMixedMerge(count int, meetsThreshold bool) bool {
     if !meetsThreshold || hwndMixedWarning==0 || send(hwndMixedWarning,BM_GETCHECK,0,0)==0 {
         return true
     }
-    msg:=fmt.Sprintf("本次將合併%d份文件，且包含非PDF格式附件。\n\n"+
-        "混合多檔轉檔在部分安裝Apex One的電腦上，可能觸發安全軟體攔截。"+
-        "請先確認文件來源可信，且操作符合機關資安規範。\n\n"+
-        "是否繼續合併？\n\n"+
-        "「是」＝繼續合併；「否」＝停止合併（預設）。",count)
-    choice,_,_:=pMessageBox.Call(hwndMain,uintptr(unsafe.Pointer(str(msg))),
-        uintptr(unsafe.Pointer(str("混合格式多檔合併｜慎用警告"))),
-        MB_YESNO|MB_ICONWARNING|MB_DEFBUTTON2)
-    if choice!=IDYES {
+    accepted:=confirmModernMixedMerge(count)
+    if !accepted {
         status("已停止混合格式合併，未建立輸出檔案。")
         return false
     }
