@@ -447,6 +447,9 @@ func appendParent(body []byte, newRoot int) ([]byte, error) {
 // mergePDFFiles merges at the PDF object level. Work is only done on invocation;
 // there are no temporary helpers, network calls, installer, or runtime dependencies.
 func mergePDFFiles(inputs []string, output string) (int, error) {
+    return mergePDFFilesWithProgress(inputs,output,nil)
+}
+func mergePDFFilesWithProgress(inputs []string,output string,report func(int,string)) (int,error) {
 	if len(inputs) < 2 {
 		return 0, errors.New("至少需要 2 份 PDF")
 	}
@@ -473,14 +476,20 @@ func mergePDFFiles(inputs []string, output string) (int, error) {
 		}
 		pages += doc.count
 		docs = append(docs, doc)
+        if report!=nil {report(65+15*len(docs)/len(inputs),"正在解析PDF頁面")}
 	}
-	return mergePDFDocuments(docs, output)
+	return mergePDFDocumentsWithProgress(docs,output,func(done,total int){
+        if report!=nil {report(80+18*done/total,"正在寫入PDF頁面")}
+    })
 }
 
 // mergePDFDocuments writes already-parsed PDFs. It avoids reading input PDFs
 // from temporary extracted files; the final sibling .tmp is retained for
 // atomic publish and to avoid exposing partial official correspondence.
-func mergePDFDocuments(docs []*pdfInput, output string) (int, error) {
+func mergePDFDocuments(docs []*pdfInput, output string) (int,error) {
+    return mergePDFDocumentsWithProgress(docs,output,nil)
+}
+func mergePDFDocumentsWithProgress(docs []*pdfInput,output string,onDocument func(done,total int)) (int,error) {
 	if len(docs) < 2 {
 		return 0, errors.New("至少需要 2 份 PDF")
 	}
@@ -570,6 +579,7 @@ func mergePDFDocuments(docs []*pdfInput, output string) (int, error) {
 				return 0, e
 			}
 		}
+        if onDocument!=nil {onDocument(ix+1,len(docs))}
 	}
 	if e := writer.finish(1); e != nil {
 		return 0, e
