@@ -58,7 +58,7 @@ function Assert-DialogAndCancel([string[]]$files,[string]$folder) {
         $dialog=[IntPtr]::Zero
         for ($i=0;$i -lt 80;$i++){
             Start-Sleep -Milliseconds 200
-            $dialog=[WarningE2E]::FindWindow('#32770',$caption)
+            $dialog=[WarningE2E]::FindWindow('FastPDFRiskDialog',$caption)
             if ($dialog -ne [IntPtr]::Zero){break}
         }
         if ($dialog -eq [IntPtr]::Zero){throw 'Expected warning dialog was not displayed'}
@@ -67,18 +67,18 @@ function Assert-DialogAndCancel([string[]]$files,[string]$folder) {
         $yes=[WarningE2E]::GetDlgItem($dialog,1001)
         if ($no -eq [IntPtr]::Zero -or $yes -eq [IntPtr]::Zero){
             if (Test-Path $env:FASTPDF_STARTUP_LOG) {Get-Content $env:FASTPDF_STARTUP_LOG | Write-Output}
-            throw "Modern command-link TaskDialog not found; Stop=$no Continue=$yes"
+            throw "Custom native risk dialog is missing Stop/Continue buttons; Stop=$no Continue=$yes"
         }
         if (![WarningE2E]::PostMessage($dialog,0x111,[UIntPtr]::new(1002),$no)){
             throw 'Could not select Stop in TaskDialog'
         }
         for ($i=0;$i -lt 35;$i++){
             Start-Sleep -Milliseconds 200
-            if ([WarningE2E]::FindWindow('#32770',$caption) -eq [IntPtr]::Zero){break}
+            if ([WarningE2E]::FindWindow('FastPDFRiskDialog',$caption) -eq [IntPtr]::Zero){break}
         }
-        if ([WarningE2E]::FindWindow('#32770',$caption) -ne [IntPtr]::Zero){throw 'Warning dialog failed to close on stop'}
+        if ([WarningE2E]::FindWindow('FastPDFRiskDialog',$caption) -ne [IntPtr]::Zero){throw 'Warning dialog failed to close on stop'}
         Assert-NoOutput $folder
-        Write-Output 'PASS: mixed >3 warning shown, modern command-link dialog offers Stop and Continue, cancel produces no output.'
+        Write-Output 'PASS: mixed >3 warning shown, custom native dialog offers Stop and Continue, cancel produces no output.'
     } finally {
         $p.Refresh()
         if (!$p.HasExited){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue}
@@ -152,7 +152,7 @@ try {
         $done=$false
         for($i=0;$i -lt 110;$i++){
             Start-Sleep -Milliseconds 250
-            if ([WarningE2E]::FindWindow('#32770','公文PDF快合｜慎用提醒') -ne [IntPtr]::Zero){
+            if ([WarningE2E]::FindWindow('FastPDFRiskDialog','公文PDF快合｜慎用提醒') -ne [IntPtr]::Zero){
                 throw 'Pure PDF merge must not show mixed-format warning'
             }
             $out=Join-Path $pure '合併檔案.pdf'
