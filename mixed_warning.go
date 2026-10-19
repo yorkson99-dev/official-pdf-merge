@@ -5,25 +5,38 @@ import (
     "strings"
 )
 
-// needsMixedFileWarning is deliberately a *preflight user notification*
-// decision, not an antivirus detection rule. Only the selected files in the
-// final merge order count; excluded ZIP entries are never included.
-func needsMixedFileWarning(names []string) bool {
-    if len(names) <= 3 {
-        return false
-    }
+// countEditableDocuments counts documents which require Microsoft Office
+// conversion (all supported non-PDF formats). Pure PDF attachments do not
+// count toward the user warning threshold, regardless of total file count.
+func countEditableDocuments(names []string) int {
+    count := 0
     for _, name := range names {
         if !strings.EqualFold(filepath.Ext(name), ".pdf") {
-            return true
+            count++
         }
     }
-    return false
+    return count
 }
 
-func needsMixedZIPWarning(entries []officialEntry) bool {
-    names := make([]string, len(entries))
-    for i, entry := range entries {
-        names[i] = entry.name
+// User warning threshold: strictly more than TWO Office conversions in a
+// single operation. This is a user-configurable caution, not a guarantee
+// that Apex One will allow any smaller task.
+func needsMixedFileWarning(names []string) bool {
+    return countEditableDocuments(names) > 2
+}
+
+func countEditableZIPDocuments(entries []officialEntry) int {
+    count := 0
+    for _, entry := range entries {
+        if !strings.EqualFold(filepath.Ext(entry.name), ".pdf") {
+            count++
+        }
     }
-    return needsMixedFileWarning(names)
+    return count
+}
+
+// Only analyzed/selected ZIP entries are passed here; excluded opinion sheets,
+// drafts and other ZIP items do not contribute to the threshold.
+func needsMixedZIPWarning(entries []officialEntry) bool {
+    return countEditableZIPDocuments(entries) > 2
 }
