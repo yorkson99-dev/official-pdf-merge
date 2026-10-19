@@ -32,7 +32,8 @@ func verifiedStageCopy(folder string,state diagnosticCheckpoint)(string,error){
  f,err:=os.CreateTemp(folder,".official-checkpoint-publish-*.pdf")
  if err!=nil{return "",err}
  name:=f.Name()
- defer func(){if err!=nil{_ =os.Remove(name)}}()
+ cleanup:=true
+ defer func(){if cleanup{_ =os.Remove(name)}}()
  _,err=io.Copy(f,origin)
  if err!=nil{_ =f.Close();return "",err}
  if err=f.Sync();err!=nil{_ =f.Close();return "",err}
@@ -43,6 +44,7 @@ func verifiedStageCopy(folder string,state diagnosticCheckpoint)(string,error){
  pdf,err:=parsePDF(name)
  if err!=nil{return "",fmt.Errorf("正式輸出檢查PDF失敗：%w",err)}
  if pdf.count!=state.Pages{return "",errors.New("正式PDF頁數與階段紀錄不符")}
+ cleanup=false
  return name,nil
 }
 
