@@ -440,6 +440,8 @@ func makeChild(class, text string, x, y, w, h int, style uint32, id int) uintptr
 
 
 func initUI() {
+    initClasses:=[2]uint32{8,ICC_PROGRESS_CLASS}
+    pInitCommonControlsEx.Call(uintptr(unsafe.Pointer(&initClasses[0])))
     fontHeight := int32(-18)
     fontHandle, _, _ = pCreateFont.Call(uintptr(fontHeight),0,0,0,400,0,0,0,1,0,0,0,0,uintptr(unsafe.Pointer(str("Microsoft JhengHei UI"))))
     titleHeight := int32(-29)
@@ -451,14 +453,14 @@ func initUI() {
     makeChild("STATIC","公文 ZIP　自動合併",43,124,575,34,0,0)
     makeChild("STATIC","PDF、Word、ODF、Excel、PowerPoint 附件自動轉檔並依序合併",43,161,594,30,0,0)
     hwndZip=makeChild("BUTTON","選擇公文 ZIP",43,201,604,49,WS_TABSTOP|BS_OWNERDRAW,ID_ADD_ZIP)
-    hwndDetail=makeChild("BUTTON","使用完整日期與發文字號命名",45,258,582,27,WS_TABSTOP|0x00000003,ID_FULL_NAME)
-    hwndMixedWarning=makeChild("BUTTON","混合格式超過3份時顯示慎用警告",45,285,582,24,WS_TABSTOP|0x00000003,ID_MIXED_WARNING)
-    if readMixedWarningSetting() {send(hwndMixedWarning,BM_SETCHECK,1,0)}
+    hwndDetail=makeChild("BUTTON","使用完整日期與發文字號命名",45,261,582,27,WS_TABSTOP|0x00000003,ID_FULL_NAME)
     makeChild("STATIC","一般文件　手動排序合併",42,333,335,28,0,0)
     // Default is zero-dialog output in the first file's directory.
     // Opt-in checkbox preserves the previous Save As picker on demand.
     hwndSaveAs=makeChild("BUTTON","合併時開啟另存視窗",414,329,230,31,WS_TABSTOP|0x00000003,ID_SAVE_AS)
-    hwndList=makeChild("LISTBOX","",42,370,437,141,WS_BORDER|WS_VSCROLL|WS_TABSTOP|LBS_NOTIFY|LBS_NOINTEGRALHEIGHT,ID_LIST)
+    makeChild("STATIC","序號",51,366,60,23,SS_LEFTNOWORDWRAP,ID_COLUMN_ORDER)
+    makeChild("STATIC","檔案名稱",119,366,342,23,SS_LEFTNOWORDWRAP,ID_COLUMN_FILENAME)
+    hwndList=makeChild("LISTBOX","",42,391,437,120,WS_BORDER|WS_VSCROLL|WS_TABSTOP|LBS_NOTIFY|LBS_OWNERDRAWFIXED|LBS_HASSTRINGS|LBS_NOINTEGRALHEIGHT,ID_LIST)
     oldListProc,_,_=pSetWindowLongPtr.Call(hwndList,GWLP_WNDPROC,listProc)
     makeChild("BUTTON","加入文件",491,370,154,32,WS_TABSTOP|BS_OWNERDRAW,ID_ADD)
     makeChild("BUTTON","上移",491,410,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_UP)
@@ -466,8 +468,13 @@ func initUI() {
     makeChild("BUTTON","移除",491,451,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_REMOVE)
     makeChild("BUTTON","清空",572,451,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_CLEAR)
     hwndMerge=makeChild("BUTTON","合併一般文件",42,524,603,40,WS_TABSTOP|BS_OWNERDRAW,ID_MERGE)
+    hwndMixedWarning=makeChild("BUTTON","混合格式超過3份時顯示慎用警告（適用所有合併方式）",39,593,605,30,WS_TABSTOP|0x00000003,ID_MIXED_WARNING)
+    if readMixedWarningSetting() {send(hwndMixedWarning,BM_SETCHECK,1,0)}
     statusBrush,_,_=pCreateSolidBrush.Call(winColor(236,242,249))
-    hwndStatus=makeChild("STATIC","待命｜拖入 ZIP 即自動產出 PDF",38,592,597,26,SS_LEFTNOWORDWRAP|SS_ENDELLIPSIS|SS_NOPREFIX,ID_STATUS)
+    hwndStatus=makeChild("STATIC","待命｜拖入 ZIP 即自動產出 PDF",38,646,606,25,SS_LEFTNOWORDWRAP|SS_ENDELLIPSIS|SS_NOPREFIX,ID_STATUS)
+    hwndProgress=makeChild("msctls_progress32","",40,679,551,19,0,ID_PROGRESS)
+    if hwndProgress!=0 {send(hwndProgress,PBM_SETRANGE32,0,100)}
+    hwndProgressLabel=makeChild("STATIC","0%",600,675,52,25,SS_LEFTNOWORDWRAP|SS_NOPREFIX,ID_PROGRESS_LABEL)
     pDragAcceptFiles.Call(hwndMain,1)
     pDragAcceptFiles.Call(hwndList,1)
 }
@@ -475,7 +482,7 @@ func initUI() {
 func refresh(selectIndex int) {
 	send(hwndList, LB_RESETCONTENT, 0, 0)
 	for i, file := range winFiles {
-		label := fmt.Sprintf("%02d  %s", i+1, filepath.Base(file))
+		label := filepath.Base(file)
 		send(hwndList, LB_ADDSTRING, 0, uintptr(unsafe.Pointer(str(label))))
 	}
 	if selectIndex >= 0 && selectIndex < len(winFiles) {
