@@ -45,6 +45,7 @@ var (
 	pSetWindowLongPtr         = u32.NewProc("SetWindowLongPtrW")
 	pCallWindowProc           = u32.NewProc("CallWindowProcW")
 	pGetSystemMetrics         = u32.NewProc("GetSystemMetrics")
+    pSystemParametersInfo=u32.NewProc("SystemParametersInfoW")
 	pGetModuleHandle          = k32.NewProc("GetModuleHandleW")
 	pDragAcceptFiles          = s32.NewProc("DragAcceptFiles")
 	pDragQueryFile            = s32.NewProc("DragQueryFileW")
@@ -255,11 +256,11 @@ func paintBackground(hwnd uintptr) {
     hdc,_,_:=pBeginPaint.Call(hwnd,uintptr(unsafe.Pointer(&ps)))
     if hdc==0 {return}
     bg:=winColor(247,249,253)
-    fillColor(hdc,winRect{0,0,690,730},bg)
+    fillColor(hdc,winRect{0,0,690,694},bg)
     roundedColor(hdc,winRect{22,106,668,305},24,winColor(233,243,255),winColor(217,232,253))
     roundedColor(hdc,winRect{22,321,668,577},24,winColor(255,255,255),winColor(229,235,243))
-    roundedColor(hdc,winRect{22,588,668,630},13,winColor(255,255,255),winColor(229,235,243))
-    roundedColor(hdc,winRect{22,641,668,710},13,winColor(236,242,249),winColor(236,242,249))
+    roundedColor(hdc,winRect{22,581,668,620},13,winColor(255,255,255),winColor(229,235,243))
+    roundedColor(hdc,winRect{22,628,668,685},13,winColor(236,242,249),winColor(236,242,249))
     pEndPaint.Call(hwnd,uintptr(unsafe.Pointer(&ps)))
 }
 func paintButton(l uintptr) {
@@ -468,13 +469,13 @@ func initUI() {
     makeChild("BUTTON","移除",491,451,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_REMOVE)
     makeChild("BUTTON","清空",572,451,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_CLEAR)
     hwndMerge=makeChild("BUTTON","合併一般文件",42,524,603,40,WS_TABSTOP|BS_OWNERDRAW,ID_MERGE)
-    hwndMixedWarning=makeChild("BUTTON","混合格式超過3份時顯示慎用警告（適用所有合併方式）",39,593,605,30,WS_TABSTOP|0x00000003,ID_MIXED_WARNING)
+    hwndMixedWarning=makeChild("BUTTON","混合格式超過3份時顯示慎用警告（適用所有合併方式）",39,584,605,30,WS_TABSTOP|0x00000003,ID_MIXED_WARNING)
     if readMixedWarningSetting() {send(hwndMixedWarning,BM_SETCHECK,1,0)}
     statusBrush,_,_=pCreateSolidBrush.Call(winColor(236,242,249))
-    hwndStatus=makeChild("STATIC","待命｜拖入 ZIP 即自動產出 PDF",38,646,606,25,SS_LEFTNOWORDWRAP|SS_ENDELLIPSIS|SS_NOPREFIX,ID_STATUS)
-    hwndProgress=makeChild("msctls_progress32","",40,679,551,19,0,ID_PROGRESS)
+    hwndStatus=makeChild("STATIC","待命｜拖入 ZIP 即自動產出 PDF",38,631,606,24,SS_LEFTNOWORDWRAP|SS_ENDELLIPSIS|SS_NOPREFIX,ID_STATUS)
+    hwndProgress=makeChild("msctls_progress32","",40,660,551,19,0,ID_PROGRESS)
     if hwndProgress!=0 {send(hwndProgress,PBM_SETRANGE32,0,100)}
-    hwndProgressLabel=makeChild("STATIC","0%",600,675,52,25,SS_LEFTNOWORDWRAP|SS_NOPREFIX,ID_PROGRESS_LABEL)
+    hwndProgressLabel=makeChild("STATIC","0%",600,657,52,24,SS_LEFTNOWORDWRAP|SS_NOPREFIX,ID_PROGRESS_LABEL)
     pDragAcceptFiles.Call(hwndMain,1)
     pDragAcceptFiles.Call(hwndList,1)
 }
@@ -1016,17 +1017,17 @@ func main() {
 		return
 	}
 	screenX, _, _ := pGetSystemMetrics.Call(0)
-	screenY, _, _ := pGetSystemMetrics.Call(1)
-	x := int((screenX - 690) / 2)
-	y := int((screenY - 754) / 2)
-	if x < 0 {
-		x = 0
-	}
-	if y < 0 {
-		y = 0
-	}
+    screenY, _, _ := pGetSystemMetrics.Call(1)
+    // Center inside the usable desktop, not behind the Windows taskbar.
+    work:=winRect{0,0,int32(screenX),int32(screenY)}
+    ok,_,_:=pSystemParametersInfo.Call(0x0030,0,uintptr(unsafe.Pointer(&work)),0) // SPI_GETWORKAREA
+    if ok==0 {work=winRect{0,0,int32(screenX),int32(screenY)}}
+    x:=int(work.Left)+(int(work.Right-work.Left)-690)/2
+    y:=int(work.Top)+(int(work.Bottom-work.Top)-728)/2
+    if x<int(work.Left) {x=int(work.Left)}
+    if y<int(work.Top) {y=int(work.Top)}
 	traceStartup("CreateWindowExW begin")
-	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜臺北市政府地政局測繪科開發"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 754, 0, 0, instance, 0)
+	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜臺北市政府地政局測繪科開發"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 728, 0, 0, instance, 0)
 	traceStartup(fmt.Sprintf("CreateWindowExW hwnd=%d error=%v", hwnd, windowErr))
 	if hwnd == 0 {
 		pMessageBox.Call(0, uintptr(unsafe.Pointer(str("無法建立程式視窗："+windowErr.Error()))), uintptr(unsafe.Pointer(str("公文 PDF 快合｜啟動失敗"))), MB_OK|MB_ICONERROR)
