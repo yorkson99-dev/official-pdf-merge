@@ -109,7 +109,10 @@ const (
 	MB_ICONERROR         = 0x10
 	MB_ICONINFORMATION   = 0x40
 	MB_YESNO             = 0x4
+    MB_ICONWARNING       = 0x30
+    MB_DEFBUTTON2        = 0x100
 	IDYES                = 6
+    BM_SETCHECK          = 0x00F1
 	BM_GETCHECK          = 0x00F0
 	OFN_EXPLORER         = 0x00080000
 	OFN_ALLOWMULTISELECT = 0x00000200
@@ -130,6 +133,7 @@ const (
 	ID_ADD_ZIP           = 109
 	ID_FULL_NAME         = 110
     ID_SAVE_AS           = 111
+    ID_MIXED_WARNING     = 112
 	ID_LIST              = 201
 	ID_STATUS            = 202
 )
@@ -230,7 +234,7 @@ func paintBackground(hwnd uintptr) {
     if hdc==0 {return}
     bg:=winColor(247,249,253)
     fillColor(hdc,winRect{0,0,690,660},bg)
-    roundedColor(hdc,winRect{22,106,668,305},24,winColor(233,243,255),winColor(217,232,253))
+    roundedColor(hdc,winRect{22,106,668,315},24,winColor(233,243,255),winColor(217,232,253))
     roundedColor(hdc,winRect{22,321,668,577},24,winColor(255,255,255),winColor(229,235,243))
     roundedColor(hdc,winRect{22,586,668,619},13,winColor(236,242,249),winColor(236,242,249))
     pEndPaint.Call(hwnd,uintptr(unsafe.Pointer(&ps)))
@@ -264,6 +268,13 @@ func paintButton(l uintptr) {
     pDrawText.Call(d.Hdc,uintptr(unsafe.Pointer(str(title))),^uintptr(0),uintptr(unsafe.Pointer(&d.RcItem)),DT_CENTER|DT_VCENTER|DT_SINGLELINE)
 }
 
+type zipAnalysisResult struct {
+    path string
+    job *officialJob
+    detailed bool
+    err error
+}
+
 type mergeResult struct {
 	path  string
 	count int
@@ -271,13 +282,14 @@ type mergeResult struct {
 	warning string
 }
 var (
-	hwndMain, hwndList, hwndStatus, hwndMerge, hwndZip, hwndDetail, hwndSaveAs uintptr
+	hwndMain, hwndList, hwndStatus, hwndMerge, hwndZip, hwndDetail, hwndSaveAs, hwndMixedWarning uintptr
 	oldListProc                                                    uintptr
 	winFiles                                                       []string
 	dragFrom                                                       = -1
 	isMerging                                                      bool
 	resultMu                                                       sync.Mutex
 	latestResult                                                   mergeResult
+    pendingZipAnalysis zipAnalysisResult
 	fontHandle                                                     uintptr
     titleFont uintptr
     statusBrush uintptr
@@ -329,6 +341,39 @@ func alert(msg string, err bool) {
 	}
 	pMessageBox.Call(hwndMain, uintptr(unsafe.Pointer(str(msg))), uintptr(unsafe.Pointer(str("快合 PDF"))), flags)
 }
+// A warning is a user-visible caution, not an antivirus bypass.
+// It always runs on the Win32 UI thread, before an output is created.
+func confirmMixedMerge(count int, meetsThreshold bool) bool {
+    if !meetsThreshold || hwndMixedWarning==0 || send(hwndMixedWarning,BM_GETCHECK,0,0)==0 {
+        return true
+    }
+    msg:=fmt.Sprintf("本次將合併%d份文件，且包含非PDF格式附件。\\n\\n"+
+        "混合多檔轉檔在部分安裝Apex One的電腦上，可能觸發安全軟體攔截。"+
+        "請先確認文件來源可信，且操作符合機關資安規範。\\n\\n"+
+        "是否繼續合併？\\n\\n"+
+        "「是」＝繼續合併；「否」＝停止合併（預設）。",count)
+    choice,_,_:=pMessageBox.Call(hwndMain,uintptr(unsafe.Pointer(str(msg))),
+        uintptr(unsafe.Pointer(str("混合格式多檔合併｜慎用警告"))),
+        MB_YESNO|MB_ICONWARNING|MB_DEFBUTTON2)
+    if choice!=IDYES {
+        status("已停止混合格式合併，未建立輸出檔案。")
+        return false
+    }
+    return true
+}
+
+func updateWarningPreference() {
+    enabled:=send(hwndMixedWarning,BM_GETCHECK,0,0)!=0
+    previous:=readMixedWarningSetting()
+    if err:=writeMixedWarningSetting(enabled);err!=nil {
+        if previous {send(hwndMixedWarning,BM_SETCHECK,1,0)} else {send(hwndMixedWarning,BM_SETCHECK,0,0)}
+        alert("無法儲存慎用警告設定：\\n"+err.Error()+"\\n設定已恢復原值。",true)
+        return
+    }
+    if enabled {status("已開啟混合格式多檔慎用警告（設定已記憶）。")
+    } else {status("已關閉混合格式多檔慎用警告（設定已記憶）。")}
+}
+
 func makeChild(class, text string, x, y, w, h int, style uint32, id int) uintptr {
 	r, _, _ := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(str(class))), uintptr(unsafe.Pointer(str(text))), uintptr(WS_CHILD|WS_VISIBLE|style), uintptr(x), uintptr(y), uintptr(w), uintptr(h), hwndMain, uintptr(id), 0, 0)
 	if fontHandle != 0 {
@@ -343,13 +388,16 @@ func initUI() {
     fontHandle, _, _ = pCreateFont.Call(uintptr(fontHeight),0,0,0,400,0,0,0,1,0,0,0,0,uintptr(unsafe.Pointer(str("Microsoft JhengHei UI"))))
     titleHeight := int32(-29)
     titleFont,_,_=pCreateFont.Call(uintptr(titleHeight),0,0,0,700,0,0,0,1,0,0,0,0,uintptr(unsafe.Pointer(str("Microsoft JhengHei UI"))))
-    header:=makeChild("STATIC","公文快合",32,17,400,39,0,0)
+    header:=makeChild("STATIC","公文快合",32,17,280,39,0,0)
+    makeChild("STATIC","臺北市政府地政局測繪科開發",354,35,308,26,SS_LEFTNOWORDWRAP|SS_NOPREFIX,0)
     if titleFont != 0 {send(header, WM_SETFONT,titleFont,1)}
     makeChild("STATIC","本機處理 · 無須上傳 · ZIP 即放即合併",33,66,590,27,0,0)
     makeChild("STATIC","公文 ZIP　自動合併",43,124,575,34,0,0)
     makeChild("STATIC","PDF、Word、ODF、Excel、PowerPoint 附件自動轉檔並依序合併",43,161,594,30,0,0)
     hwndZip=makeChild("BUTTON","選擇公文 ZIP",43,201,604,49,WS_TABSTOP|BS_OWNERDRAW,ID_ADD_ZIP)
-    hwndDetail=makeChild("BUTTON","使用完整日期與發文字號命名",45,264,582,30,WS_TABSTOP|0x00000003,ID_FULL_NAME)
+    hwndDetail=makeChild("BUTTON","使用完整日期與發文字號命名",45,258,582,27,WS_TABSTOP|0x00000003,ID_FULL_NAME)
+    hwndMixedWarning=makeChild("BUTTON","混合格式超過3份時顯示慎用警告",45,285,582,24,WS_TABSTOP|0x00000003,ID_MIXED_WARNING)
+    if readMixedWarningSetting() {send(hwndMixedWarning,BM_SETCHECK,1,0)}
     makeChild("STATIC","一般文件　手動排序合併",42,333,335,28,0,0)
     // Default is zero-dialog output in the first file's directory.
     // Opt-in checkbox preserves the previous Save As picker on demand.
@@ -502,6 +550,7 @@ func handleStartupFiles(args []string) {
 
 func startAutoMixed(files []string) {
     if isMerging { return }
+    if !confirmMixedMerge(len(files),needsMixedFileWarning(files)) { return }
     output, err := autoMergedPath(files)
     if err != nil { status(err.Error()); return }
     startMixedWorker(files, output)
@@ -557,39 +606,44 @@ func autoOutputPath(zipPath, name string) (string, error) {
 	return "", fmt.Errorf("輸出檔名編號已達上限")
 }
 func startOfficialZIP(path string) {
-	if isMerging { return }
-	detailed := send(hwndDetail, BM_GETCHECK, 0, 0) != 0
-	traceStartup("ZIP job started")
-	isMerging = true
-	status("正在處理：" + filepath.Base(path))
-	go func() {
-		var result mergeResult
-		defer func() {
-			if v := recover(); v != nil { result.err = fmt.Errorf("公文 ZIP 處理異常：%v", v) }
-			resultMu.Lock()
-			latestResult = result
-			resultMu.Unlock()
-			pPostMessage.Call(hwndMain, WM_APP+1, 0, 0)
-			traceStartup("ZIP notification posted")
-		}()
-		traceStartup("ZIP analysis begin")
-		job, err := analyzeZIP(path)
-		if err != nil { traceStartup("ZIP analysis failed: "+err.Error()); result.err = err; return }
-		traceStartup(fmt.Sprintf("ZIP analysis done: %d entries", len(job.Entries)))
-		name, nameErr := job.outputName(detailed)
-		if nameErr != nil {
-			fallback := cleanComponent(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
-			if fallback == "" { fallback = "來文" }
-			name = fallback + "_來文資料待確認.pdf"
-		}
-		out, err := autoOutputPath(path, name)
-		if err != nil { result.err = err; return }
-		result.path = out
-		traceStartup("ZIP merge begin")
-		result.count, result.err = mergeOfficialZIP(job, out)
-		if result.err != nil { traceStartup("ZIP merge failed: "+result.err.Error()) } else { traceStartup("ZIP merge done") }
-		if result.err == nil && nameErr != nil { result.warning = "（檔名待核對）" }
-	}()
+    if isMerging { return }
+    detailed:=send(hwndDetail,BM_GETCHECK,0,0)!=0
+    traceStartup("ZIP analysis scheduled")
+    isMerging=true
+    status("正在分析公文ZIP："+filepath.Base(path))
+    go func() {
+        job,err:=analyzeZIP(path)
+        resultMu.Lock()
+        pendingZipAnalysis=zipAnalysisResult{path:path,detailed:detailed,job:job,err:err}
+        resultMu.Unlock()
+        pPostMessage.Call(hwndMain,WM_APP+4,0,0)
+    }()
+}
+
+func runAnalyzedZIP(request zipAnalysisResult) {
+    status("正在處理："+filepath.Base(request.path))
+    go func(){
+        var result mergeResult
+        defer func(){
+            if v:=recover();v!=nil{result.err=fmt.Errorf("公文ZIP處理異常：%v",v)}
+            resultMu.Lock()
+            latestResult=result
+            resultMu.Unlock()
+            pPostMessage.Call(hwndMain,WM_APP+1,0,0)
+        }()
+        job:=request.job
+        name,nameErr:=job.outputName(request.detailed)
+        if nameErr!=nil {
+            fallback:=cleanComponent(strings.TrimSuffix(filepath.Base(request.path),filepath.Ext(request.path)))
+            if fallback==""{fallback="來文"}
+            name=fallback+"_來文資料待確認.pdf"
+        }
+        out,err:=autoOutputPath(request.path,name)
+        if err!=nil{result.err=err;return}
+        result.path=out
+        result.count,result.err=mergeOfficialZIP(job,out)
+        if result.err==nil&&nameErr!=nil{result.warning="（檔名待核對）"}
+    }()
 }
 
 func chooseFiles() {
@@ -664,6 +718,7 @@ func chooseOutput() string {
 func startMerge() {
     if isMerging { return }
     if len(winFiles) < 2 { status("請先加入至少 2 份文件。"); return }
+    if !confirmMixedMerge(len(winFiles),needsMixedFileWarning(winFiles)) { return }
     var out string
     if send(hwndSaveAs, BM_GETCHECK, 0, 0) != 0 {
         out = chooseOutput()
@@ -690,6 +745,10 @@ func removeSelected() {
 	refresh(i)
 }
 func handleCommand(id int) {
+    if id==ID_MIXED_WARNING {
+        updateWarningPreference()
+        return
+    }
 	if isMerging {
 		return
 	}
@@ -795,7 +854,7 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		return 0
 	case WM_COMMAND:
 		id := int(w & 0xFFFF)
-		if (id == ID_ADD || id == ID_UP || id == ID_DOWN || id == ID_REMOVE || id == ID_CLEAR || id == ID_MERGE || id == ID_ADD_ZIP) {
+		if (id == ID_ADD || id == ID_UP || id == ID_DOWN || id == ID_REMOVE || id == ID_CLEAR || id == ID_MERGE || id == ID_ADD_ZIP || id == ID_MIXED_WARNING) {
 			handleCommand(id)
 			return 0
 		}
@@ -809,6 +868,30 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 	case WM_APP + 3:
 		if len(os.Args) > 1 { handleStartupFiles(os.Args[1:]) }
 		return 0
+    case WM_APP + 4:
+        // ZIP analysis completes on a worker, but the modal confirmation must
+        // run on the UI thread before Office conversion or PDF output begins.
+        resultMu.Lock()
+        request:=pendingZipAnalysis
+        pendingZipAnalysis=zipAnalysisResult{}
+        resultMu.Unlock()
+        if request.err!=nil {
+            isMerging=false
+            status("ZIP分析失敗："+request.err.Error())
+            alert("公文ZIP分析失敗：\\n"+request.err.Error(),true)
+            return 0
+        }
+        if request.job==nil {
+            isMerging=false
+            alert("公文ZIP分析沒有產生有效結果。",true)
+            return 0
+        }
+        if !confirmMixedMerge(len(request.job.Entries),needsMixedZIPWarning(request.job.Entries)) {
+            isMerging=false
+            return 0
+        }
+        runAnalyzedZIP(request)
+        return 0
 	case WM_APP + 1:
 		traceStartup("WM_APP+1 received")
 		resultMu.Lock()
@@ -863,7 +946,7 @@ func main() {
 		y = 0
 	}
 	traceStartup("CreateWindowExW begin")
-	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜極簡版"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 660, 0, 0, instance, 0)
+	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜臺北市政府地政局測繪科開發"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 660, 0, 0, instance, 0)
 	traceStartup(fmt.Sprintf("CreateWindowExW hwnd=%d error=%v", hwnd, windowErr))
 	if hwnd == 0 {
 		pMessageBox.Call(0, uintptr(unsafe.Pointer(str("無法建立程式視窗："+windowErr.Error()))), uintptr(unsafe.Pointer(str("公文 PDF 快合｜啟動失敗"))), MB_OK|MB_ICONERROR)
