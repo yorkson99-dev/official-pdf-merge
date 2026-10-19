@@ -22,6 +22,8 @@ public static class WarningE2E {
 '@
 $root=Join-Path $env:RUNNER_TEMP 'official-pdf-mixed-warning-e2e'
 New-Item -ItemType Directory -Force $root | Out-Null
+$env:FASTPDF_STARTUP_LOG=Join-Path $root 'warning-startup-trace.log'
+Remove-Item $env:FASTPDF_STARTUP_LOG -Force -ErrorAction SilentlyContinue
 $exe=Join-Path $PSScriptRoot '公文PDF快合.exe'
 $registry='HKCU:\Software\OfficialPDFMerge'
 $previousExists=$false; $oldValue=$null
@@ -64,7 +66,8 @@ function Assert-DialogAndCancel([string[]]$files,[string]$folder) {
         $no=[WarningE2E]::GetDlgItem($dialog,1002)
         $yes=[WarningE2E]::GetDlgItem($dialog,1001)
         if ($no -eq [IntPtr]::Zero -or $yes -eq [IntPtr]::Zero){
-            throw 'Modern command-link TaskDialog was not shown: expected Stop and Continue buttons'
+            if (Test-Path $env:FASTPDF_STARTUP_LOG) {Get-Content $env:FASTPDF_STARTUP_LOG | Write-Output}
+            throw "Modern command-link TaskDialog not found; Stop=$no Continue=$yes"
         }
         if (![WarningE2E]::PostMessage($dialog,0x111,[UIntPtr]::new(1002),$no)){
             throw 'Could not select Stop in TaskDialog'
