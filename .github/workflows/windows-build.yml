@@ -1,7 +1,7 @@
 name: Build standalone Win32 EXE
 on:
   push:
-    branches: [maintenance/v1.6.1-ui-polish]
+    branches: [maintenance/v1.6.1-ui-polish, feature/v1.8.0-ui-checkpoint]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -105,6 +105,13 @@ jobs:
       - name: End-to-end safety prompt and persistent warning checkbox
         shell: pwsh
         run: ./ci-warning-e2e.ps1
+      - name: Verify checkpoint stage tests and integration markers
+        shell: pwsh
+        run: |
+          go test -run TestDiagnostic -v .
+          $ui = Get-Content -Raw -Encoding UTF8 main_windows.go
+          if ($ui -notmatch "ID_CHECKPOINT_ZIP" -or $ui -notmatch "runZIPDiagnosticStage") { throw "Missing checkpoint UI integration" }
+          if ($ui -notmatch "hwndProgress" -or $ui -notmatch "ID_MIXED_WARNING") { throw "UI regression" }
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
