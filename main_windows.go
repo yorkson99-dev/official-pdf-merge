@@ -407,11 +407,11 @@ func alert(msg string, err bool) {
 }
 // A warning is a user-visible caution, not an antivirus bypass.
 // It always runs on the Win32 UI thread, before an output is created.
-func confirmMixedMerge(count int, meetsThreshold bool) bool {
-    if !meetsThreshold || hwndMixedWarning==0 || send(hwndMixedWarning,BM_GETCHECK,0,0)==0 {
+func confirmMixedMerge(totalFiles int, officeConversions int) bool {
+    if officeConversions <= 2 || hwndMixedWarning==0 || send(hwndMixedWarning,BM_GETCHECK,0,0)==0 {
         return true
     }
-    accepted:=confirmModernMixedMerge(count)
+    accepted:=confirmModernMixedMerge(totalFiles,officeConversions)
     if !accepted {
         setProgressUI(0,"已停止混合格式合併，未建立輸出。")
         return false
@@ -469,7 +469,7 @@ func initUI() {
     makeChild("BUTTON","移除",491,451,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_REMOVE)
     makeChild("BUTTON","清空",572,451,73,32,WS_TABSTOP|BS_OWNERDRAW,ID_CLEAR)
     hwndMerge=makeChild("BUTTON","合併一般文件",42,524,603,40,WS_TABSTOP|BS_OWNERDRAW,ID_MERGE)
-    hwndMixedWarning=makeChild("BUTTON","混合格式超過3份時顯示慎用警告（適用所有合併方式）",39,584,605,30,WS_TABSTOP|0x00000003,ID_MIXED_WARNING)
+    hwndMixedWarning=makeChild("BUTTON","需轉檔附件超過2份時顯示慎用警告（適用所有合併方式）",39,584,605,30,WS_TABSTOP|0x00000003,ID_MIXED_WARNING)
     if readMixedWarningSetting() {send(hwndMixedWarning,BM_SETCHECK,1,0)}
     statusBrush,_,_=pCreateSolidBrush.Call(winColor(236,242,249))
     hwndStatus=makeChild("STATIC","待命｜拖入 ZIP 即自動產出 PDF",38,631,606,24,SS_LEFTNOWORDWRAP|SS_ENDELLIPSIS|SS_NOPREFIX,ID_STATUS)
@@ -614,7 +614,7 @@ func handleStartupFiles(args []string) {
 
 func startAutoMixed(files []string) {
     if isMerging { return }
-    if !confirmMixedMerge(len(files),needsMixedFileWarning(files)) { return }
+    if !confirmMixedMerge(len(files),countEditableDocuments(files)) { return }
     output, err := autoMergedPath(files)
     if err != nil { status(err.Error()); return }
     startMixedWorker(files, output)
@@ -782,7 +782,7 @@ func chooseOutput() string {
 func startMerge() {
     if isMerging { return }
     if len(winFiles) < 2 { status("請先加入至少 2 份文件。"); return }
-    if !confirmMixedMerge(len(winFiles),needsMixedFileWarning(winFiles)) { return }
+    if !confirmMixedMerge(len(winFiles),countEditableDocuments(winFiles)) { return }
     var out string
     if send(hwndSaveAs, BM_GETCHECK, 0, 0) != 0 {
         out = chooseOutput()
@@ -966,7 +966,7 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
             alert("公文ZIP分析沒有產生有效結果。",true)
             return 0
         }
-        if !confirmMixedMerge(len(request.job.Entries),needsMixedZIPWarning(request.job.Entries)) {
+        if !confirmMixedMerge(len(request.job.Entries),countEditableZIPDocuments(request.job.Entries)) {
             isMerging=false
             setProgressUI(0,"已取消合併")
             return 0
