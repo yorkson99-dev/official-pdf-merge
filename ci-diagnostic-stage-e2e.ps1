@@ -52,10 +52,11 @@ try{
   if($dialog -ne [IntPtr]::Zero){break}
  }
  if($dialog -eq [IntPtr]::Zero){throw 'Stage completed but no user-facing completion dialog appeared'}
- $ok=[DiagWin32]::GetDlgItem($dialog,1)
- if($ok -eq [IntPtr]::Zero){throw 'Completion dialog missing OK control'}
- if(![DiagWin32]::PostMessage($dialog,0x111,[UIntPtr]::new(1),$ok)){
-  throw 'Cannot dismiss completion dialog'
+ # The native MessageBox can publish its top-level HWND a fraction of a
+ # second before the IDOK child exists. Use its standard IDOK command instead
+ # of assuming GetDlgItem succeeds on the first scheduler tick.
+ if(![DiagWin32]::PostMessage($dialog,0x111,[UIntPtr]::new(1),[IntPtr]::Zero)){
+  throw 'Cannot dispatch standard IDOK command'
  }
  for($i=0;$i -lt 70;$i++){
   Start-Sleep -Milliseconds 150
