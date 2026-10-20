@@ -43,8 +43,8 @@ func guidedPublishState(folder,stem,statePath,targetName string,st guidedCheckpo
   name:=targetName
   if n>1{name=fmt.Sprintf("%s (%d).pdf",base,n)}
   candidate:=filepath.Join(folder,name)
-  if err=guidedLinkFile(src,candidate);err==nil{dest=candidate;break}
-  if !os.IsExist(err){return "",fmt.Errorf("正式輸出不可用（磁碟可能不支援原子建立連結）：%w",err)}
+  if e=guidedLinkFile(src,candidate);e==nil{dest=candidate;break}
+  if !os.IsExist(e){return "",fmt.Errorf("正式輸出不可用（磁碟可能不支援原子建立連結）：%w",e)}
  }
  if dest==""{return "",errors.New("正式PDF檔名衝突過多")}
  hash,e=fingerprintFile(dest)
