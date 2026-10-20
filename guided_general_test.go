@@ -52,3 +52,30 @@ func TestGuidedGeneralRejectsChangedSelectedFile(t *testing.T){
  state,_,e:=loadGuidedCheckpoint(first.CheckpointPath)
  if e!=nil||state.Stage!=1{t.Fatal("previous checkpoint changed")}
 }
+
+func TestGuidedGeneralRejectsDifferentOrderingWithoutStartingOver(t *testing.T){
+ old:=convertEditable
+ sample,e:=os.ReadFile("testdata/sample0.pdf");if e!=nil{t.Fatal(e)}
+ convertEditable=func(in,out string)error{return os.WriteFile(out,sample,0600)}
+ defer func(){convertEditable=old}()
+ dir:=t.TempDir()
+ files:=[]string{}
+ for _,n:=range []string{"1.docx","2.odt","3.ods"}{
+  p:=filepath.Join(dir,n)
+  if e=os.WriteFile(p,[]byte("synthetic"),0600);e!=nil{t.Fatal(e)}
+  files=append(files,p)
+ }
+ one,e:=runGeneralGuidedStage(files)
+ if e!=nil{t.Fatal(e)}
+ wrong:=[]string{files[1],files[0],files[2]}
+ expected,e:=guidedGeneralReceiptPath(files)
+ if e!=nil{t.Fatal(e)}
+ reselected,e:=guidedGeneralReceiptPath(wrong)
+ if e!=nil{t.Fatal(e)}
+ if reselected!=expected{t.Fatal("reordering must address the same receipt")}
+ if _,e=runGeneralGuidedStage(wrong);e==nil||!strings.Contains(e.Error(),"不一致"){
+  t.Fatalf("changed order must stop continuation: %v",e)
+ }
+ state,ok,e:=loadGuidedCheckpoint(one.CheckpointPath)
+ if e!=nil||!ok||state.Stage!=1{t.Fatalf("original progress lost: %+v %v",state,e)}
+}
