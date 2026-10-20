@@ -79,3 +79,30 @@ func TestGuidedGeneralRejectsDifferentOrderingWithoutStartingOver(t *testing.T){
  state,ok,e:=loadGuidedCheckpoint(one.CheckpointPath)
  if e!=nil||!ok||state.Stage!=1{t.Fatalf("original progress lost: %+v %v",state,e)}
 }
+
+func TestGuidedGeneralStopsIfSourceChangesDuringConversion(t *testing.T){
+ old:=convertEditable
+ defer func(){convertEditable=old}()
+ sample,e:=os.ReadFile("testdata/sample0.pdf")
+ if e!=nil{t.Fatal(e)}
+ dir:=t.TempDir();files:=[]string{}
+ for _,name:=range []string{"1.odt","2.docx","3.ods"}{
+  path:=filepath.Join(dir,name)
+  if e=os.WriteFile(path,[]byte("before"),0600);e!=nil{t.Fatal(e)}
+  files=append(files,path)
+ }
+ called:=false
+ convertEditable=func(in,out string)error{
+  if !called{
+   called=true
+   if err:=os.WriteFile(files[2],[]byte("modified"),0600);err!=nil{return err}
+  }
+  return os.WriteFile(out,sample,0600)
+ }
+ if _,e=runGeneralGuidedStage(files);e==nil||!strings.Contains(e.Error(),"發生變動"){
+  t.Fatalf("source changed mid-stage must be rejected: %v",e)
+ }
+ statePath,e:=guidedGeneralReceiptPath(files)
+ if e!=nil{t.Fatal(e)}
+ if _,e=os.Stat(statePath);!os.IsNotExist(e){t.Fatal("checkpoint published after mutation")}
+}
