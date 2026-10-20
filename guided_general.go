@@ -29,7 +29,9 @@ func guidedGeneralIdentity(inputs []string)(folder,stem,sourceHash,statePath str
   _,_=io.WriteString(sha,strings.ToLower(abs)+"\x00")
  }
  identity:=hex.EncodeToString(sha.Sum(nil))
- folder=filepath.Dir(inputs[0])
+ first,e:=filepath.Abs(inputs[0])
+ if e!=nil{err=e;return}
+ folder=filepath.Dir(first)
  stem="合併檔案-"+identity[:12]
  statePath=filepath.Join(folder,stem+".手動分段.json")
  content:=sha256.New()
