@@ -1,7 +1,7 @@
 name: Build standalone Win32 EXE
 on:
   push:
-    branches: [maintenance/v1.6.1-office-count-warning]
+    branches: [maintenance/v1.6.1-office-count-warning, feature/v1.8.0-guided-manual]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -106,6 +106,18 @@ jobs:
       - name: End-to-end safety prompt and persistent warning checkbox
         shell: pwsh
         run: ./ci-warning-e2e.ps1
+      - name: Guided manual stages and GUI routing quality gate
+        shell: pwsh
+        run: |
+          go test -run "Test(Guided|Diagnostic)" -v .
+          if ($LASTEXITCODE -ne 0) { throw 'Guided stage regression failed' }
+          $ui=Get-Content -Raw -Encoding UTF8 main_windows.go
+          if ($ui -notmatch 'confirmSameZIPFile' -or $ui -notmatch 'runGuidedOfficialZIP' -or $ui -notmatch 'startGuidedGeneralWorker') {
+            throw 'Missing guided native UI integration'
+          }
+          if ($ui -notmatch 'confirmMixedMerge' -or $ui -notmatch 'confirmGuidedManual') {
+            throw 'Missing user confirmation guard'
+          }
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
