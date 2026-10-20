@@ -132,7 +132,8 @@ func checkGuidedCheckpoint(state guidedCheckpoint,sourceHash string,total int,fo
  hash,e:=fingerprintFile(pdfPath)
  if e!=nil{return fmt.Errorf("前階段PDF遺失：%w",e)}
  if hash!=state.PDFSHA256{return errors.New("前階段PDF內容或雜湊已變更，拒絕接續")}
- if _,e=parsePDF(pdfPath);e!=nil{return fmt.Errorf("前階段PDF無法讀取：%w",e)}
+ parsed,e:=parsePDF(pdfPath)
+ if e!=nil||parsed.count!=state.Pages{return errors.New("前階段PDF頁數或內容無法驗證")}
  if state.Finished&&state.Completed!=total{return errors.New("完成狀態與附件數量不符")}
  return nil
 }
@@ -240,6 +241,11 @@ func runZIPGuidedStage(zipPath string)(guidedResult,error){
  if exists{prior=filepath.Join(folder,state.PDFPath)}
  pages,e:=mergeGuidedZIPRange(job,start,end,prior,out)
  if e!=nil{return result,e}
+ after,e:=fingerprintFile(path)
+ if e!=nil||after!=sha{
+  _=os.Remove(out)
+  return result,errors.New("來源 ZIP 在合併過程中發生變動，已停止本階段")
+ }
  // Only promote checkpoint once the complete new PDF exists and parses.
  verify,e:=parsePDF(out)
  if e!=nil||verify.count!=pages{
