@@ -93,6 +93,11 @@ func runGeneralGuidedStage(inputs []string)(guidedResult,error){
   batch=append(batch,inputs[start:end]...)
   pages,e:=mergeMixedFiles(batch,out)
   if e!=nil{return res,e}
+  _,_,afterHash,_,e:=guidedGeneralIdentity(inputs)
+  if e!=nil||afterHash!=hash{
+   _=os.Remove(out)
+   return res,errors.New("來源文件在合併過程中發生變動，已停止本階段")
+  }
   pdf,e:=parsePDF(out)
   if e!=nil||pdf.count!=pages{_ =os.Remove(out);return res,errors.New("階段PDF驗證失敗")}
   sum,e:=fingerprintFile(out)
