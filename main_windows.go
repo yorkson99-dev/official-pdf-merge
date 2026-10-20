@@ -619,6 +619,7 @@ func startAutoMixed(files []string) {
     if !confirmMixedMerge(len(files),office){return}
     if office>2{
         if !confirmGuidedManual(len(files),office,false){return}
+        if !confirmGuidedGeneralSource(files){return}
         startGuidedGeneralWorker(files)
         return
     }
@@ -678,6 +679,37 @@ func confirmSameZIPFile(source string)bool{
     if e!=nil{return false}
     if !strings.EqualFold(filepath.Clean(selected),filepath.Clean(expected)){
         alert("選取的 ZIP 與原先分析的檔案不同；已停止本階段。",true)
+        return false
+    }
+    return true
+}
+// The next stage begins only after the user explicitly confirms its expected
+// first source document via the native Open File dialog.
+func confirmGuidedGeneralSource(files []string)bool{
+    statePath,e:=guidedGeneralReceiptPath(files)
+    if e!=nil{alert("無法定位分段接續紀錄："+e.Error(),true);return false}
+    st,exists,e:=loadGuidedCheckpoint(statePath)
+    if e!=nil{alert("接續紀錄無法讀取："+e.Error(),true);return false}
+    next:=0
+    if exists&&st.Completed>=0&&st.Completed<len(files){next=st.Completed}
+    expected,e:=filepath.Abs(files[next])
+    if e!=nil{return false}
+    buf:=make([]uint16,32768)
+    initial,e:=syscall.UTF16FromString(expected)
+    if e!=nil{return false}
+    copy(buf,initial)
+    filter:=documentFileFilter()
+    f:=openFileName{lStructSize:uint32(unsafe.Sizeof(openFileName{})),
+        hwndOwner:hwndMain,lpstrFilter:&filter[0],lpstrFile:&buf[0],
+        nMaxFile:uint32(len(buf)),
+        lpstrTitle:str("請確認下一階段起始文件："+filepath.Base(expected)),
+        flags:OFN_EXPLORER|OFN_FILEMUSTEXIST|OFN_NOCHANGEDIR}
+    ok,_,_:=pGetOpenFileName.Call(uintptr(unsafe.Pointer(&f)))
+    if ok==0{return false}
+    selected,e:=filepath.Abs(syscall.UTF16ToString(buf))
+    if e!=nil{return false}
+    if !strings.EqualFold(filepath.Clean(selected),filepath.Clean(expected)){
+        alert("選取的文件不是原清單下一階段的預定起始文件，已停止本階段。",true)
         return false
     }
     return true
@@ -862,6 +894,7 @@ func startMerge() {
         if send(hwndSaveAs,BM_GETCHECK,0,0)!=0{
             alert("引導式分段將儲存在第一份文件的資料夾，輸出合併檔案.pdf（同名自動編號）。",false)
         }
+        if !confirmGuidedGeneralSource(winFiles){return}
         startGuidedGeneralWorker(winFiles)
         return
     }
