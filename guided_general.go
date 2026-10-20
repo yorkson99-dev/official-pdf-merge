@@ -11,36 +11,48 @@ import (
  "io"
  "os"
  "path/filepath"
+ "sort"
  "strings"
  "time"
 )
 
-func guidedGeneralIdentity(inputs []string)(folder,stem,sourceHash,statePath string,err error){
- if len(inputs)==0{return "","","","",errors.New("請先選擇文件")}
- sha:=sha256.New()
+func guidedGeneralReceiptPath(inputs []string)(string,error){
+ if len(inputs)==0{return "",errors.New("請先選擇文件")}
+ paths:=make([]string,0,len(inputs))
  for _,path:=range inputs{
   abs,e:=filepath.Abs(path)
+  if e!=nil{return "",e}
+  paths=append(paths,strings.ToLower(abs))
+ }
+ // Sort only for identity: the actual merge order remains user-controlled.
+ // A changed order must reach the same receipt and fail its source checksum.
+ sort.Strings(paths)
+ sha:=sha256.New()
+ for _,path:=range paths{_,_=io.WriteString(sha,path+"\\x00")}
+ identity:=hex.EncodeToString(sha.Sum(nil))
+ first,e:=filepath.Abs(inputs[0])
+ if e!=nil{return "",e}
+ folder:=filepath.Dir(first)
+ return filepath.Join(folder,"合併檔案-"+identity[:12]+".手動分段.json"),nil
+}
+
+func guidedGeneralIdentity(inputs []string)(folder,stem,sourceHash,statePath string,err error){
+ statePath,err=guidedGeneralReceiptPath(inputs)
+ if err!=nil{return}
+ folder=filepath.Dir(statePath)
+ stem=strings.TrimSuffix(filepath.Base(statePath),".手動分段.json")
+ content:=sha256.New()
+ for _,name:=range inputs{
+  abs,e:=filepath.Abs(name)
   if e!=nil{err=e;return}
   info,e:=os.Stat(abs)
   if e!=nil{err=e;return}
   if !info.Mode().IsRegular(){err=errors.New("包含非一般檔案");return}
   if info.Size()>700*1024*1024{err=errors.New("來源文件超過大小限制");return}
   if !supportedOfficialExt(filepath.Ext(abs)){err=errors.New("包含不支援的文件");return}
-  _,_=io.WriteString(sha,strings.ToLower(abs)+"\x00")
- }
- identity:=hex.EncodeToString(sha.Sum(nil))
- first,e:=filepath.Abs(inputs[0])
- if e!=nil{err=e;return}
- folder=filepath.Dir(first)
- stem="合併檔案-"+identity[:12]
- statePath=filepath.Join(folder,stem+".手動分段.json")
- content:=sha256.New()
- for _,name:=range inputs{
-  abs,e:=filepath.Abs(name)
-  if e!=nil{err=e;return}
   fp,e:=fingerprintFile(abs)
   if e!=nil{err=e;return}
-  _,_=io.WriteString(content,strings.ToLower(abs)+"\x00"+fp+"\n")
+  _,_=io.WriteString(content,strings.ToLower(abs)+"\\x00"+fp+"\\n")
  }
  sourceHash=hex.EncodeToString(content.Sum(nil))
  return
