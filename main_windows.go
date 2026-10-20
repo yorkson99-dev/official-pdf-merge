@@ -319,6 +319,7 @@ type zipAnalysisResult struct {
 }
 
 type mergeResult struct {
+    guided *guidedResult
 	path  string
 	count int
 	err   error
@@ -614,7 +615,13 @@ func handleStartupFiles(args []string) {
 
 func startAutoMixed(files []string) {
     if isMerging { return }
-    if !confirmMixedMerge(len(files),countEditableDocuments(files)) { return }
+    office:=countEditableDocuments(files)
+    if !confirmMixedMerge(len(files),office){return}
+    if office>2{
+        if !confirmGuidedManual(len(files),office,false){return}
+        startGuidedGeneralWorker(files)
+        return
+    }
     output, err := autoMergedPath(files)
     if err != nil { status(err.Error()); return }
     startMixedWorker(files, output)
@@ -639,6 +646,72 @@ func startMixedWorker(files []string, output string) {
 }
 func zipFilter() []uint16 {
 	return []uint16{'Z', 'I', 'P', ' ', '(', '*', '.', 'z', 'i', 'p', ')', 0, '*', '.', 'z', 'i', 'p', 0, 0}
+}
+// Mandatory user acknowledgement is separate from the optional legacy warning.
+func confirmGuidedManual(total,office int,fromZIP bool)bool{
+    origin:="所選文件"
+    if fromZIP{origin="公文 ZIP"}
+    description:=fmt.Sprintf("%s：共%d份文件，其中%d份需 Office 轉檔。\\n"+
+        "每批僅轉換最多 2 份非 PDF，並保存累計成果及接續紀錄。\\n"+
+        "每階段均由您重新選擇或確認來源，不會自動重新啟動。\\n\\n"+
+        "是否開始引導式手動分段？",origin,total,office)
+    chosen,_,_:=pMessageBox.Call(hwndMain,uintptr(unsafe.Pointer(str(description))),
+        uintptr(unsafe.Pointer(str("公文 PDF 快合｜分段操作"))),
+        MB_YESNO|MB_ICONINFORMATION|MB_DEFBUTTON2)
+    return chosen==IDYES
+}
+func confirmSameZIPFile(source string)bool{
+    buf:=make([]uint16,32768)
+    initial,e:=syscall.UTF16FromString(source)
+    if e!=nil{return false}
+    copy(buf,initial)
+    filter:=zipFilter()
+    f:=openFileName{lStructSize:uint32(unsafe.Sizeof(openFileName{})),
+        hwndOwner:hwndMain,lpstrFilter:&filter[0],lpstrFile:&buf[0],
+        nMaxFile:uint32(len(buf)),lpstrTitle:str("請重新確認並選取相同的原始公文 ZIP"),
+        flags:OFN_EXPLORER|OFN_FILEMUSTEXIST|OFN_NOCHANGEDIR}
+    ok,_,_:=pGetOpenFileName.Call(uintptr(unsafe.Pointer(&f)))
+    if ok==0{return false}
+    selected,e:=filepath.Abs(syscall.UTF16ToString(buf))
+    if e!=nil{return false}
+    expected,e:=filepath.Abs(source)
+    if e!=nil{return false}
+    if !strings.EqualFold(filepath.Clean(selected),filepath.Clean(expected)){
+        alert("選取的 ZIP 與原先分析的檔案不同；已停止本階段。",true)
+        return false
+    }
+    return true
+}
+func startGuidedGeneralWorker(files []string){
+    if isMerging{return}
+    isMerging=true
+    snapshot:=append([]string(nil),files...)
+    setProgressUI(3,"正在處理手動分段（每批最多 2 份非 PDF）")
+    go func(){
+        result:=mergeResult{}
+        defer func(){
+            if v:=recover();v!=nil{result.err=fmt.Errorf("分段作業異常：%v",v)}
+            resultMu.Lock();latestResult=result;resultMu.Unlock()
+            pPostMessage.Call(hwndMain,WM_APP+1,0,0)
+        }()
+        stage,e:=runGeneralGuidedStage(snapshot)
+        result.err=e
+        if e==nil{result.guided=&stage}
+    }()
+}
+func runGuidedOfficialZIP(path string,detailed bool){
+    setProgressUI(8,"正在處理公文手動分段")
+    go func(){
+        result:=mergeResult{}
+        defer func(){
+            if v:=recover();v!=nil{result.err=fmt.Errorf("分段作業異常：%v",v)}
+            resultMu.Lock();latestResult=result;resultMu.Unlock()
+            pPostMessage.Call(hwndMain,WM_APP+1,0,0)
+        }()
+        stage,e:=runZIPGuidedPublishedStage(path,detailed)
+        result.err=e
+        if e==nil{result.guided=&stage}
+    }()
 }
 func chooseZIP() {
 	buf := make([]uint16, 32768)
@@ -782,7 +855,16 @@ func chooseOutput() string {
 func startMerge() {
     if isMerging { return }
     if len(winFiles) < 2 { status("請先加入至少 2 份文件。"); return }
-    if !confirmMixedMerge(len(winFiles),countEditableDocuments(winFiles)) { return }
+    office:=countEditableDocuments(winFiles)
+    if !confirmMixedMerge(len(winFiles),office){return}
+    if office>2{
+        if !confirmGuidedManual(len(winFiles),office,false){return}
+        if send(hwndSaveAs,BM_GETCHECK,0,0)!=0{
+            alert("引導式分段將儲存在第一份文件的資料夾，輸出合併檔案.pdf（同名自動編號）。",false)
+        }
+        startGuidedGeneralWorker(winFiles)
+        return
+    }
     var out string
     if send(hwndSaveAs, BM_GETCHECK, 0, 0) != 0 {
         out = chooseOutput()
@@ -971,7 +1053,21 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
             setProgressUI(0,"已取消合併")
             return 0
         }
-        runAnalyzedZIP(request)
+        if countEditableZIPDocuments(request.job.Entries)>2{
+            if !confirmGuidedManual(len(request.job.Entries),countEditableZIPDocuments(request.job.Entries),true){
+                isMerging=false
+                setProgressUI(0,"已取消分段合併")
+                return 0
+            }
+            if !confirmSameZIPFile(request.path){
+                isMerging=false
+                setProgressUI(0,"未確認原始 ZIP，已停止本階段")
+                return 0
+            }
+            runGuidedOfficialZIP(request.path,request.detailed)
+        }else{
+            runAnalyzedZIP(request)
+        }
         return 0
 	case WM_APP + 1:
 		traceStartup("WM_APP+1 received")
@@ -981,6 +1077,19 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		traceStartup("WM_APP+1 result obtained")
 		isMerging = false
 		traceStartup("WM_APP+1 flags restored")
+        if result.guided!=nil{
+            g:=result.guided
+            if g.Published{
+                setProgressUI(100,fmt.Sprintf("分段合併完成：%d頁｜%s",g.Pages,filepath.Base(g.PDFPath)))
+                alert(fmt.Sprintf("所有階段已完成並驗證。\\n正式 PDF：%s\\n頁數：%d",filepath.Base(g.PDFPath),g.Pages),false)
+            }else{
+                percent:=g.Completed*100/g.Total
+                if percent>=100{percent=99}
+                setProgressUI(percent,fmt.Sprintf("第%d階段完成：%d／%d份",g.Stage,g.Completed,g.Total))
+                alert(fmt.Sprintf("第%d階段已保存累計 PDF 與接續紀錄。\\n已處理：%d／%d份。\\n請再次選擇相同 ZIP，或依相同順序重新選取完整文件清單，再執行下一階段。\\n程式不會自動重啟。",g.Stage,g.Completed,g.Total),false)
+            }
+            return 0
+        }
 		if result.err != nil {
 			traceStartup("WM_APP+1 failure update begin")
 			setProgressUI(0,"合併失敗｜"+result.err.Error())
@@ -1027,7 +1136,7 @@ func main() {
     if x<int(work.Left) {x=int(work.Left)}
     if y<int(work.Top) {y=int(work.Top)}
 	traceStartup("CreateWindowExW begin")
-	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合｜臺北市政府地政局測繪科開發"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 728, 0, 0, instance, 0)
+	hwnd, _, windowErr := pCreateWindowEx.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(str("公文 PDF 快合 v1.8.0 手動分段｜臺北市政府地政局測繪科開發"))), uintptr(WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|WS_VISIBLE), uintptr(x), uintptr(y), 690, 728, 0, 0, instance, 0)
 	traceStartup(fmt.Sprintf("CreateWindowExW hwnd=%d error=%v", hwnd, windowErr))
 	if hwnd == 0 {
 		pMessageBox.Call(0, uintptr(unsafe.Pointer(str("無法建立程式視窗："+windowErr.Error()))), uintptr(unsafe.Pointer(str("公文 PDF 快合｜啟動失敗"))), MB_OK|MB_ICONERROR)
