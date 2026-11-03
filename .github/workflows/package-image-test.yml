@@ -1,0 +1,51 @@
+name: Package image-capable EXE (build only, no CI tests)
+on:
+  push:
+    branches:
+      - feature/v1.6.1-office2-images
+    paths:
+      - .github/workflows/package-image-test.yml
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout image feature branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install build-time Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: false
+      - name: Compile portable Windows x64 GUI executable (no tests)
+        shell: pwsh
+        run: |
+          $env:GOOS='windows'
+          $env:GOARCH='amd64'
+          $env:CGO_ENABLED='0'
+          go build -trimpath -ldflags='-H=windowsgui -s -w' -o '公文PDF快合.exe' .
+          if ($LASTEXITCODE -ne 0) { throw 'EXE compilation failed' }
+      - name: Embed original app icon
+        shell: pwsh
+        run: ./ci-embed-icon.ps1
+      - name: Embed developer attribution
+        shell: pwsh
+        run: ./ci-embed-attribution.ps1
+      - name: Embed Windows common controls v6 manifest
+        shell: pwsh
+        run: ./ci-embed-manifest.ps1
+      - name: Record binary hash and size (not a test)
+        shell: pwsh
+        run: |
+          Get-Item '公文PDF快合.exe' | Select-Object Name,Length
+          Get-FileHash -Algorithm SHA256 '公文PDF快合.exe' | Format-List
+      - name: Upload EXE for user acceptance
+        uses: actions/upload-artifact@v4
+        with:
+          name: OfficialPDFMerge-office2-images-win64
+          path: 公文PDF快合.exe
+          if-no-files-found: error
+          retention-days: 14
