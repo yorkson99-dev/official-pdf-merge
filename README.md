@@ -1,4 +1,6 @@
-# 公文 PDF 快合｜Win32 原生免安裝工具
+# 公文 PDF 快合｜v1.8.0 常見圖片合併支援（Win32 免安裝）
+
+正式版本：**v1.8.0**。以 v1.6.1-office2 為基底，新增圖片轉 PDF 與混合排序。此版本沿用先前成功建置的 EXE，僅更新 Windows 版本資訊；詳細內容見 `RELEASE_NOTES_v1.8.0.md`。
 
 針對 Windows 10／11（x64）公務電腦設計的獨立 PDF 合併工具。
 
@@ -142,4 +144,4 @@ Windows 入口為 `main_windows.go`，主文解析為 `lettertext.go`，公文 Z
 - 每頁圖片最多 4,000 萬像素。SVG 屬可能引用外部資源的向量格式，不在本次無執行內容之影像解碼範圍。
 - **慎用警告仍只計入 Microsoft Office COM 轉檔文件**；PDF 與圖片不計入。圖片不透過 Office 或外部命令列處理。
 - 保留原始檔、不覆寫既有 PDF。圖片轉檔有格式／尺寸／頁數檢查，錯誤時不留下部分結果。
-- **不執行或觸發 GitHub CI**。此分支供程式碼審查與後續經資安核可後的建置；未修改 main、Release 或 Apex One 設定。
+- **本版不執行單元及整合 CI 測試**；沿用已成功建置與實測的 EXE，只更新 VERSIONINFO 為 1.8.0.0 並發布 GitHub Release。未修改 main 或 Apex One 設定。
