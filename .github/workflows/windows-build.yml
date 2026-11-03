@@ -1,4 +1,4 @@
-name: Build standalone Win32 EXE
+name: Package image-enabled Windows EXE
 on:
   push:
     branches: [feature/v1.6.1-office2-images]
