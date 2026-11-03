@@ -60,7 +60,10 @@ func supportedOfficialExt(ext string) bool {
 	switch strings.ToLower(ext) {
 	case ".pdf", ".doc", ".docx", ".docm", ".odt", ".rtf", ".txt",
 		".xls", ".xlsx", ".xlsm", ".ods", ".csv", ".tsv",
-		".ppt", ".pptx", ".pptm", ".odp":
+		".ppt", ".pptx", ".pptm", ".odp",
+        ".png", ".jpg", ".jpeg", ".jpe", ".jfif", ".gif", ".bmp", ".dib",
+        ".tif", ".tiff", ".webp", ".heic", ".heif", ".hif", ".avif",
+        ".ico", ".jxr", ".wdp", ".hdp":
 		return true
 	}
 	return false

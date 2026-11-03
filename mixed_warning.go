@@ -6,12 +6,12 @@ import (
 )
 
 // countEditableDocuments counts documents which require Microsoft Office
-// conversion (all supported non-PDF formats). Pure PDF attachments do not
+// conversion (supported Office/ODF formats only). PDF and raster images do not
 // count toward the user warning threshold, regardless of total file count.
 func countEditableDocuments(names []string) int {
     count := 0
     for _, name := range names {
-        if !strings.EqualFold(filepath.Ext(name), ".pdf") {
+        if !strings.EqualFold(filepath.Ext(name), ".pdf") && !isImageExt(filepath.Ext(name)) {
             count++
         }
     }
@@ -28,7 +28,7 @@ func needsMixedFileWarning(names []string) bool {
 func countEditableZIPDocuments(entries []officialEntry) int {
     count := 0
     for _, entry := range entries {
-        if !strings.EqualFold(filepath.Ext(entry.name), ".pdf") {
+        if !strings.EqualFold(filepath.Ext(entry.name), ".pdf") && !isImageExt(filepath.Ext(entry.name)) {
             count++
         }
     }

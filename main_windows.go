@@ -376,8 +376,8 @@ func fileFilter() []uint16 {
     return windowsFilter("PDF (*.pdf)", "*.pdf")
 }
 func documentFileFilter() []uint16 {
-    return windowsFilter("支援文件（PDF、Word、ODF、Excel、PowerPoint）",
-        "*.pdf;*.doc;*.docx;*.docm;*.odt;*.rtf;*.txt;*.xls;*.xlsx;*.xlsm;*.ods;*.csv;*.tsv;*.ppt;*.pptx;*.pptm;*.odp")
+    return windowsFilter("支援文件（PDF、Office、常見圖片）",
+        "*.pdf;*.doc;*.docx;*.docm;*.odt;*.rtf;*.txt;*.xls;*.xlsx;*.xlsm;*.ods;*.csv;*.tsv;*.ppt;*.pptx;*.pptm;*.odp;*.png;*.jpg;*.jpeg;*.jpe;*.jfif;*.gif;*.bmp;*.dib;*.tif;*.tiff;*.webp;*.heic;*.heif;*.hif;*.avif;*.ico;*.jxr;*.wdp;*.hdp")
 }
 func windowsFilter(label, pattern string) []uint16 {
     out := make([]uint16, 0, 320)
@@ -452,7 +452,7 @@ func initUI() {
     if titleFont != 0 {send(header, WM_SETFONT,titleFont,1)}
     makeChild("STATIC","本機處理 · 無須上傳 · ZIP 即放即合併",33,66,590,27,0,0)
     makeChild("STATIC","公文 ZIP　自動合併",43,124,575,34,0,0)
-    makeChild("STATIC","PDF、Word、ODF、Excel、PowerPoint 附件自動轉檔並依序合併",43,161,594,30,0,0)
+    makeChild("STATIC","PDF、Office、PNG、JPG、TIFF、WebP 等圖片依序合併",43,161,594,30,0,0)
     hwndZip=makeChild("BUTTON","選擇公文 ZIP",43,201,604,49,WS_TABSTOP|BS_OWNERDRAW,ID_ADD_ZIP)
     hwndDetail=makeChild("BUTTON","使用完整日期與發文字號命名",45,261,582,27,WS_TABSTOP|0x00000003,ID_FULL_NAME)
     makeChild("STATIC","一般文件　手動排序合併",42,333,335,28,0,0)
@@ -490,7 +490,7 @@ func refresh(selectIndex int) {
 		send(hwndList, LB_SETCURSEL, uintptr(selectIndex), 0)
 	}
 	if len(winFiles) < 2 {
-		status(fmt.Sprintf("共 %d 份文件；可加入 PDF 或 Office／ODF 文件。", len(winFiles)))
+		status(fmt.Sprintf("共 %d 份文件；可加入 PDF、Office／ODF 或圖片。", len(winFiles)))
 	} else {
 		status(fmt.Sprintf("目前 %d 份文件；清單即合併順序。", len(winFiles)))
 	}

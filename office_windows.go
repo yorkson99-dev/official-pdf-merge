@@ -12,6 +12,7 @@ import (
 // No child shell is launched. Only installed Microsoft Office is required.
 func convertDocumentToPDF(input, output string) error {
     ext:=strings.ToLower(filepath.Ext(input))
+    if isImageExt(ext) { return convertImageToPDF(input,output) }
     if !supportedOfficialExt(ext) || ext==".pdf" {
         return fmt.Errorf("不支援的可編輯文件：%s",ext)
     }

@@ -131,3 +131,15 @@ go build -trimpath -ldflags="-H=windowsgui -s -w" -o "公文PDF快合.exe" .
 Windows 入口為 `main_windows.go`，主文解析為 `lettertext.go`，公文 ZIP 規則為 `zipmerge.go`，PDF 合併核心為 `pdfmerge.go`。
 
 程式僅供依機關資訊安全政策核可後使用。
+
+## v1.6.1-office2 延伸：圖片轉 PDF（獨立開發分支）
+
+從 `v1.6.1-office2` 建立，保留 Office COM、現代化警告、進度條、雙欄清單與 ZIP 的 ATTCH 排序。可將 PDF、Office 文件及常見圖片混排合併，亦可將單張圖片轉成 PDF。
+
+- **Windows 內建可解碼的圖片格式**：PNG、JPG／JPEG／JPE／JFIF、GIF、BMP／DIB、TIFF／TIF、ICO、JXR／WDP／HDP。
+- **取決於 Windows 已安裝影像解碼器**：WebP、HEIC／HEIF／HIF、AVIF；未安裝時會提示解碼失敗，不會自動安裝或連網。
+- 每張靜態圖片以 A4 直式／橫式頁面等比縮放、置中，透明背景合成白色。多頁 TIFF 保留所有頁面（最多 200 頁）；GIF／動態 WebP 取首張影格。
+- 每頁圖片最多 4,000 萬像素。SVG 屬可能引用外部資源的向量格式，不在本次無執行內容之影像解碼範圍。
+- **慎用警告仍只計入 Microsoft Office COM 轉檔文件**；PDF 與圖片不計入。圖片不透過 Office 或外部命令列處理。
+- 保留原始檔、不覆寫既有 PDF。圖片轉檔有格式／尺寸／頁數檢查，錯誤時不留下部分結果。
+- **不執行或觸發 GitHub CI**。此分支供程式碼審查與後續經資安核可後的建置；未修改 main、Release 或 Apex One 設定。
