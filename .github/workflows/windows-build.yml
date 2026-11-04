@@ -1,40 +1,50 @@
-name: Publish image-enabled release v1.8.0 (no rebuild or CI tests)
+name: Package v1.9.0 sign-draft ZIP EXE (no CI tests)
 on:
   push:
-    branches: [feature/v1.6.1-office2-images]
+    branches: [feature/v1.9.0-zip-sign-draft]
     paths: ['.github/workflows/windows-build.yml']
 permissions:
-  contents: write
-  actions: read
+  contents: read
 jobs:
-  release:
+  package-only:
     runs-on: windows-latest
     steps:
-      - name: Checkout tagged release source
+      - name: Checkout source
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Download previously tested Windows EXE artifact
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh run download 41573499212 --repo "$env:GITHUB_REPOSITORY" --name "OfficialPDFMerge-office2-images-win64" --dir "release-binary"
-          if ($LASTEXITCODE -ne 0) { throw 'Approved EXE artifact download failed' }
-          Copy-Item -LiteralPath "release-binary/公文PDF快合.exe" -Destination "公文PDF快合.exe"
-      - name: Update only Windows VERSIONINFO to v1.8.0
+      - name: Set up Go compiler
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: false
+      - name: Build standalone Windows x64 EXE (no tests)
         shell: pwsh
         run: |
-          ./ci-embed-attribution.ps1
+          $env:GOOS='windows'
+          $env:GOARCH='amd64'
+          $env:CGO_ENABLED='0'
+          go build -trimpath -ldflags='-H=windowsgui -s -w' -o '公文PDF快合.exe' .
+          if ($LASTEXITCODE -ne 0) { throw 'EXE compilation failed' }
+      - name: Embed original icon
+        shell: pwsh
+        run: ./ci-embed-icon.ps1
+      - name: Embed Surveying Division version and attribution
+        shell: pwsh
+        run: ./ci-embed-attribution.ps1
+      - name: Embed Common Controls v6 manifest
+        shell: pwsh
+        run: ./ci-embed-manifest.ps1
+      - name: Verify version metadata and report SHA256 (no tests)
+        shell: pwsh
+        run: |
           $info=[System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path '公文PDF快合.exe').Path)
-          if ($info.FileVersion -ne '1.8.0.0' -or $info.ProductVersion -ne '1.8.0.0') { throw "Version mismatch: $($info.FileVersion)/$($info.ProductVersion)" }
-          if ($info.CompanyName -ne '臺北市政府地政局測繪科') { throw 'Developer attribution changed' }
-          Copy-Item -LiteralPath '公文PDF快合.exe' -Destination 'OfficialPDFMerge.exe'
-          Get-FileHash -Algorithm SHA256 'OfficialPDFMerge.exe' | Format-List
-      - name: Publish v1.8.0 GitHub Release with EXE
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create v1.8.0 "OfficialPDFMerge.exe" --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title "公文 PDF 快合 v1.8.0（常見圖片格式合併支援）" --notes-file "RELEASE_NOTES_v1.8.0.md" --latest
-          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
+          if ($info.FileVersion -ne '1.9.0.0') { throw 'Expected v1.9.0 VERSIONINFO' }
+          Get-FileHash -Algorithm SHA256 '公文PDF快合.exe' | Format-List
+      - name: Upload EXE for acceptance
+        uses: actions/upload-artifact@v4
+        with:
+          name: OfficialPDFMerge-v1.9.0-sign-draft-win64
+          path: 公文PDF快合.exe
+          if-no-files-found: error
+          retention-days: 14
