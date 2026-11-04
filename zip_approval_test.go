@@ -108,3 +108,17 @@ func TestZIPApprovalKeepsLegacyLetterParsing(t *testing.T){
   t.Fatalf("legacy 來文 flow changed: %+v",letter.Entries)
  }
 }
+
+func TestZIPApprovalCP950SecondByteBackslash(t *testing.T){
+ // CP950 功 is A5 5C. The second byte must not split a path.
+ pdf:=testApprovalPDF(t)
+ specialName:=zipSignCP950+"\\1-\xa5\x5c.pdf"
+ path:=makeApprovalSample(t,[]approvalSample{
+  {zipSignCP950+"\\1156000000_1_123(after).pdf",pdf},
+  {specialName,pdf},
+ })
+ job,e:=analyzeApprovalZIP(path,zipModeSign)
+ if e!=nil{t.Fatal(e)}
+ if len(job.Entries)!=2{t.Fatalf("CP950 attachment unexpectedly lost: %+v",job.Entries)}
+ if root:=zipRootMode(specialName);root!=zipModeSign{t.Fatalf("wrong root for CP950 0x5c trail: %s",root)}
+}
