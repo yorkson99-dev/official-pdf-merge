@@ -1,50 +1,40 @@
-name: Package v1.9.0 sign-draft ZIP EXE - CP950-safe (no CI tests)
+name: Publish v1.9.0 verified EXE release (no rebuild or CI tests)
 on:
   push:
     branches: [feature/v1.9.0-zip-sign-draft]
     paths: ['.github/workflows/windows-build.yml']
 permissions:
-  contents: read
+  contents: write
+  actions: read
 jobs:
-  package-only:
+  release:
     runs-on: windows-latest
     steps:
-      - name: Checkout source
+      - name: Checkout release metadata
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Set up Go compiler
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-          cache: false
-      - name: Build standalone Windows x64 EXE (no tests)
+      - name: Reuse user-accepted EXE without compilation
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          $env:GOOS='windows'
-          $env:GOARCH='amd64'
-          $env:CGO_ENABLED='0'
-          go build -trimpath -ldflags='-H=windowsgui -s -w' -o '公文PDF快合.exe' .
-          if ($LASTEXITCODE -ne 0) { throw 'EXE compilation failed' }
-      - name: Embed original icon
+          gh run download 41749009708 --repo "$env:GITHUB_REPOSITORY" --name "OfficialPDFMerge-v1.9.0-sign-draft-win64" --dir "accepted"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve accepted artifact' }
+          $exe=Join-Path "accepted" "公文PDF快合.exe"
+          if (!(Test-Path -LiteralPath $exe)) { throw 'EXE missing from accepted artifact' }
+          $sha=(Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash
+          $expected="24578EC562D562BEFF0D33EBA9391864F24E9C4625185C3638B2E8A61034254F"
+          if ($sha -ne $expected) { throw "Accepted EXE hash mismatch: $sha" }
+          $version=[System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path -LiteralPath $exe).Path)
+          if ($version.FileVersion -ne "1.9.0.0") { throw "EXE version mismatch: $($version.FileVersion)" }
+          if ($version.CompanyName -ne "臺北市政府地政局測繪科") { throw "Developer attribution mismatch: $($version.CompanyName)" }
+          Copy-Item -LiteralPath $exe -Destination "OfficialPDFMerge.exe"
+          Write-Output "Verified accepted EXE SHA-256: $sha"
+      - name: Create official GitHub Release v1.9.0
         shell: pwsh
-        run: ./ci-embed-icon.ps1
-      - name: Embed Surveying Division version and attribution
-        shell: pwsh
-        run: ./ci-embed-attribution.ps1
-      - name: Embed Common Controls v6 manifest
-        shell: pwsh
-        run: ./ci-embed-manifest.ps1
-      - name: Verify version metadata and report SHA256 (no tests)
-        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          $info=[System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path '公文PDF快合.exe').Path)
-          if ($info.FileVersion -ne '1.9.0.0') { throw 'Expected v1.9.0 VERSIONINFO' }
-          Get-FileHash -Algorithm SHA256 '公文PDF快合.exe' | Format-List
-      - name: Upload EXE for acceptance
-        uses: actions/upload-artifact@v4
-        with:
-          name: OfficialPDFMerge-v1.9.0-sign-draft-win64
-          path: 公文PDF快合.exe
-          if-no-files-found: error
-          retention-days: 14
+          gh release create "v1.9.0" "OfficialPDFMerge.exe" --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title "公文 PDF 快合 v1.9.0（奉核簽／奉核稿合併）" --notes-file "RELEASE_NOTES_v1.9.0.md" --latest
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release failed' }
