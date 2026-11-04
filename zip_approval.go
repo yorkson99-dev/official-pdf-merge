@@ -10,6 +10,7 @@ import (
  "regexp"
  "sort"
  "strings"
+ "unicode/utf8"
 )
 
 type zipMergeMode string
@@ -26,8 +27,28 @@ const (
 
 var zipDocumentID = regexp.MustCompile("[0-9]{8,}$")
 
+// Decode CP950 before splitting: a CP950 second byte can equal 0x5C,
+// the same byte that Windows uses as a path separator. Raw fallback
+// preserves such multibyte sequences for cross-platform test fixtures.
+func normalizedZIPPath(name string)string{
+ decoded:=displayZIPFileName(name)
+ if utf8.ValidString(decoded){return strings.ReplaceAll(decoded,"\\","/")}
+ var out strings.Builder
+ for i:=0;i<len(decoded);i++{
+  b:=decoded[i]
+  if b>=0x81 && b<=0xFE && i+1<len(decoded){
+   next:=decoded[i+1]
+   if (next>=0x40&&next<=0x7E)||(next>=0xA1&&next<=0xFE){
+    out.WriteByte(b);out.WriteByte(next);i++;continue
+   }
+  }
+  if b=='\\'{out.WriteByte('/')}else{out.WriteByte(b)}
+ }
+ return out.String()
+}
+
 func zipRootMode(name string) zipMergeMode {
- path:=strings.ReplaceAll(name,"\\","/")
+ path:=normalizedZIPPath(name)
  // Leading empty path segments and traversal-style names never qualify.
  parts:=strings.SplitN(path,"/",2)
  if len(parts)!=2 || parts[0]=="" || parts[1]=="" {return ""}
@@ -93,7 +114,7 @@ func analyzeApprovalZIP(path string, mode zipMergeMode)(*officialJob,error){
   if zipRootMode(f.Name)!=mode{continue}
   seenFolder=true
   if f.FileInfo().IsDir(){continue}
-  pathInZip:=strings.ReplaceAll(f.Name,"\\","/")
+  pathInZip:=normalizedZIPPath(f.Name)
   parts:=strings.SplitN(pathInZip,"/",2)
   if len(parts)!=2 || parts[1]=="" || strings.Contains(parts[1],"/"){continue}
   rawBase:=parts[1]
