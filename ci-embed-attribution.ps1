@@ -48,12 +48,12 @@ public static class OfficialVersionResource {
         byte[][] entries = {
             VersionString("CompanyName", "臺北市政府地政局測繪科"),
             VersionString("FileDescription", "公文 PDF 快合"),
-            VersionString("FileVersion", "1.8.0.0"),
+            VersionString("FileVersion", "1.9.0.0"),
             VersionString("InternalName", "OfficialPDFMerge"),
             VersionString("LegalCopyright", "開發：臺北市政府地政局測繪科"),
             VersionString("OriginalFilename", "OfficialPDFMerge.exe"),
             VersionString("ProductName", "公文 PDF 快合"),
-            VersionString("ProductVersion", "1.8.0.0"),
+            VersionString("ProductVersion", "1.9.0.0"),
             VersionString("Comments", "臺北市政府地政局測繪科開發"),
         };
         byte[] table = Block("040904B0", Array.Empty<byte>(), 0, 1, entries);
@@ -66,8 +66,8 @@ public static class OfficialVersionResource {
             using (var w = new BinaryWriter(ms, Encoding.Unicode, true)) {
                 uint[] values = {
                     0xFEEF04BDu, 0x00010000u,
-                    (1u << 16) | 8u, 0u,
-                    (1u << 16) | 8u, 0u,
+                    (1u << 16) | 9u, 0u,
+                    (1u << 16) | 9u, 0u,
                     0x3Fu, 0u, 0x00040004u, 1u, 0u, 0u, 0u
                 };
                 foreach (var value in values) w.Write(value);
@@ -99,5 +99,5 @@ $version=[System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
 $expected='臺北市政府地政局測繪科'
 if ($version.CompanyName -ne $expected) { throw "CompanyName mismatch: $($version.CompanyName)" }
 if ($version.Comments -ne ($expected + '開發')) { throw "Comments mismatch: $($version.Comments)" }
-if ($version.FileVersion -ne '1.8.0.0') { throw "FileVersion mismatch: $($version.FileVersion)" }
+if ($version.FileVersion -ne '1.9.0.0') { throw "FileVersion mismatch: $($version.FileVersion)" }
 Write-Output "PASS: Windows VERSIONINFO CompanyName=$($version.CompanyName), Comments=$($version.Comments)"
