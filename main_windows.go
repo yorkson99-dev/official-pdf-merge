@@ -316,6 +316,8 @@ type zipAnalysisResult struct {
     job *officialJob
     detailed bool
     err error
+    mode zipMergeMode
+    modes []zipMergeMode
 }
 
 type mergeResult struct {
@@ -676,9 +678,16 @@ func startOfficialZIP(path string) {
     isMerging=true
     setProgressUI(2,"正在分析公文ZIP："+filepath.Base(path))
     go func() {
-        job,err:=analyzeZIP(path)
+        choices,err:=availableZIPModes(path)
+        request:=zipAnalysisResult{path:path,detailed:detailed,modes:choices,err:err}
+        // Keep the original zero-dialog behavior for ZIP files containing
+        // only 來文. Any ZIP with 簽/稿 requires a conscious user choice.
+        if err==nil && len(choices)==1 && choices[0]==zipModeLetter {
+            request.mode=zipModeLetter
+            request.job,request.err=analyzeZIP(path)
+        }
         resultMu.Lock()
-        pendingZipAnalysis=zipAnalysisResult{path:path,detailed:detailed,job:job,err:err}
+        pendingZipAnalysis=request
         resultMu.Unlock()
         pPostMessage.Call(hwndMain,WM_APP+4,0,0)
     }()
@@ -696,7 +705,13 @@ func runAnalyzedZIP(request zipAnalysisResult) {
             pPostMessage.Call(hwndMain,WM_APP+1,0,0)
         }()
         job:=request.job
-        name,nameErr:=job.outputName(request.detailed)
+        var name string
+        var nameErr error
+        if request.mode==zipModeSign || request.mode==zipModeDraft {
+            name,nameErr=modePDFName(request.mode)
+        } else {
+            name,nameErr=job.outputName(request.detailed)
+        }
         if nameErr!=nil {
             fallback:=cleanComponent(strings.TrimSuffix(filepath.Base(request.path),filepath.Ext(request.path)))
             if fallback==""{fallback="來文"}
@@ -958,6 +973,28 @@ func wndProc(h uintptr, m uint32, w, l uintptr) uintptr {
             isMerging=false
             setProgressUI(0,"ZIP分析失敗："+request.err.Error())
             alert("公文ZIP分析失敗：\n"+request.err.Error(),true)
+            return 0
+        }
+        // Show the native folder-type selector only for ZIPs that include
+        // 簽 and/or 稿. This runs on the UI thread before any conversion.
+        if request.mode=="" && len(request.modes)>0 {
+            chosen:=chooseZIPMergeMode(request.modes)
+            if chosen==""{
+                isMerging=false
+                setProgressUI(0,"已取消合併，未建立輸出。")
+                return 0
+            }
+            setProgressUI(4,"正在分析所選「"+string(chosen)+"」資料夾")
+            go func(){
+                job,err:=analyzeZIPMode(request.path,chosen)
+                resultMu.Lock()
+                pendingZipAnalysis=zipAnalysisResult{
+                    path:request.path,detailed:request.detailed,
+                    mode:chosen,job:job,err:err,
+                }
+                resultMu.Unlock()
+                pPostMessage.Call(hwndMain,WM_APP+4,0,0)
+            }()
             return 0
         }
         if request.job==nil {
