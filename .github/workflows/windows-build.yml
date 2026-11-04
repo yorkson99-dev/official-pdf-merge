@@ -1,4 +1,4 @@
-name: Package v1.9.0 sign-draft ZIP EXE (no CI tests)
+name: Package v1.9.0 sign-draft ZIP EXE - CP950-safe (no CI tests)
 on:
   push:
     branches: [feature/v1.9.0-zip-sign-draft]
